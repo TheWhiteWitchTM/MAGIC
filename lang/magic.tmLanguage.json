@@ -1,0 +1,56 @@
+{
+  "name": "MAGIC",
+  "scopeName": "source.magic",
+  "fileTypes": ["magic"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#remark" },
+    { "include": "#annotation" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#keyword" },
+    { "include": "#operator" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "--.*$",
+      "name": "comment.line.double-dash.magic"
+    },
+    "remark": {
+      "match": "(?i)^[ \\t]*REM\\b.*$",
+      "name": "comment.line.remark.magic"
+    },
+    "annotation": {
+      "match": "@[A-Za-z_][A-Za-z0-9_]*|@[23][Dd]",
+      "name": "entity.name.tag.annotation.magic"
+    },
+    "string": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.magic",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "match": "\\\\(?:[nrt0\\\\'\"]|u[0-9A-Fa-f]{4}|u\\{[0-9A-Fa-f]{1,6}\\})", "name": "constant.character.escape.magic" }]
+        },
+        {
+          "name": "string.quoted.single.magic",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "match": "\\\\(?:[nrt0\\\\'\"]|u[0-9A-Fa-f]{4}|u\\{[0-9A-Fa-f]{1,6}\\})", "name": "constant.character.escape.magic" }]
+        }
+      ]
+    },
+    "number": {
+      "match": "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b",
+      "name": "constant.numeric.magic"
+    },
+    "keyword": {
+      "match": "(?i)\\b(?:import|from|class|fn|end|if|then|else|elseif|for|while|repeat|until|return|break|continue|let|print|and|or|not|true|false|nil|new|self|super|try|catch|finally|throw|await|do|to|step|in|as|is|mod|async|public|private|protected)\\b",
+      "name": "keyword.control.magic"
+    },
+    "operator": {
+      "match": "==|!=|<>|<=|>=|\\+=|-=|\\*=|/=|\\.\\.|[+\\-*/%^=<>#&]",
+      "name": "keyword.operator.magic"
+    }
+  }
+}

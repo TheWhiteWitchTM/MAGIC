@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAGIC modules</title>
+  <link rel="icon" href="/mark.jpg">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="/">MAGIC</a>
+    <a href="/learn">Learn</a>
+    <a href="/modules">Modules</a>
+    <a href="/language">Language</a>
+    <a href="/play">Play</a>
+    <a href="/tools">Tools</a>
+  </nav>
+  <div class="page-title"><h1>Modules</h1></div>
+  <main>
+    <p><code>@name</code> loads a module for the whole file. <code>import</code> loads the same module when you want to choose the names. The full export lists are in <a href="/MODULES.md">MODULES.md</a>.</p>
+    <table>
+      <thead><tr><th>Module</th><th>You get</th></tr></thead>
+      <tbody>
+        <tr><td><code>@canvas</code></td><td>A bitmap, sprites, and the frame loop.</td></tr>
+        <tr><td><code>@terminal</code></td><td>A cell grid. Use <code>@terminal as term</code> beside canvas, because both export <code>Utilities</code>.</td></tr>
+        <tr><td><code>@2d</code></td><td>Canvas and terminal together.</td></tr>
+        <tr><td><code>@3d</code></td><td>A 3D scene. Load it as <code>@3d as world</code> when the file also uses canvas.</td></tr>
+        <tr><td><code>@ui</code></td><td>Windows, buttons, and menus on a terminal.</td></tr>
+        <tr><td><code>@sound</code></td><td>Tones, named notes, and noise.</td></tr>
+        <tr><td><code>@hex</code></td><td>Neighbors, distance, rings, and pixel layout for a hex board.</td></tr>
+        <tr><td><code>@games</code></td><td>Loops, keys, scenes, scores, and small arithmetic.</td></tr>
+      </tbody>
+    </table>
+    <h2>Hex</h2>
+<pre><code>@hex
+
+let here = hex(0, 0)
+print distance(here, hex(2, -1))
+print len(neighbors(here))</code></pre>
+    <p>That prints <code>2</code>, then <code>6</code>. Direction 0 is east.</p>
+    <h2>Examples</h2>
+    <ul>
+      <li><a href="/examples/scene.magic">scene.magic</a> — canvas, a sprite, a collision</li>
+      <li><a href="/examples/modules.magic">modules.magic</a> — hex, games, and sound</li>
+      <li><a href="/examples/desk.magic">desk.magic</a> — a terminal and the UI kit</li>
+      <li><a href="/examples/play.html">Drift</a> — the canvas, in the browser</li>
+    </ul>
+  </main>
+  <footer>MAGIC compiles to JavaScript.</footer>
+</body>
+</html>

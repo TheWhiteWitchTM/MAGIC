@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Drift</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #0e1a2b; color: #f4efe4; }
+    body { display: flex; flex-direction: column; align-items: center; padding: 24px; font: 16px/1.5 Georgia, serif; }
+    p { max-width: 36rem; margin: 0 0 16px; }
+    #magic-status { margin: 0 0 12px; color: #e7c98a; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <p>Arrow keys steer the spark. The comet keeps drifting.</p>
+  <pre id="magic-status">loading</pre>
+  <script type="text/magic" id="game">
+import Engine, Utilities from "canvas"
+
+let engine = new Engine({ width: 480, height: 270 })
+let ui = Utilities.wrap(engine.canvas, { title: "Drift" })
+document.body.appendChild(ui.wrap)
+if ui.footer then ui.footer.textContent = "ready" end
+
+let spark = engine.sprite("✦", 240, 135, 42)
+let comet = engine.sprite("☄️", 48, 80, 28, "entities")
+engine.motion(comet, 1.5, 0.35)
+
+let started = false
+
+fn frame()
+  if engine.isKeyDown("ArrowLeft") then spark.x = spark.x - 4 end
+  if engine.isKeyDown("ArrowRight") then spark.x = spark.x + 4 end
+  if engine.isKeyDown("ArrowUp") then spark.y = spark.y - 4 end
+  if engine.isKeyDown("ArrowDown") then spark.y = spark.y + 4 end
+  if spark.x < 24 then spark.x = 24 end
+  if spark.y < 24 then spark.y = 24 end
+  if spark.x > 456 then spark.x = 456 end
+  if spark.y > 246 then spark.y = 246 end
+  engine.update()
+  engine.canvas.draw()
+  if not started then
+    started = true
+    if ui.footer then ui.footer.textContent = "browser ok" end
+  end
+  requestAnimationFrame(frame)
+end
+
+requestAnimationFrame(frame)
+  </script>
+  <script src="../../emoji-engine-2d/browser/emoji-engine-2d.js"></script>
+  <script src="../browser/magic.js"></script>
+  <script>
+    const status = document.getElementById('magic-status');
+    try {
+      const source = document.getElementById('game').textContent;
+      const compiled = Magic.compile(source, { target: 'script', filename: 'play.magic' });
+      new Function(compiled.code)();
+      status.textContent = 'playing';
+    } catch (error) {
+      status.textContent = error && error.stack ? error.stack : String(error);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+{
+  "name": "MAGIC",
+  "version": "0.1.0",
+  "extensions": [".magic"],
+  "scopeName": "source.magic",
+  "caseSensitive": {
+    "keywords": false,
+    "identifiers": true
+  },
+  "lineComment": "--",
+  "remark": "REM",
+  "statementEnd": ["newline", ":", ";"],
+  "blockEnd": "end",
+  "keywords": [
+    "import",
+    "from",
+    "class",
+    "fn",
+    "end",
+    "if",
+    "then",
+    "else",
+    "elseif",
+    "for",
+    "while",
+    "repeat",
+    "until",
+    "return",
+    "break",
+    "continue",
+    "let",
+    "print",
+    "and",
+    "or",
+    "not",
+    "true",
+    "false",
+    "nil",
+    "new",
+    "self",
+    "super",
+    "try",
+    "catch",
+    "finally",
+    "throw",
+    "await"
+  ],
+  "softKeywords": ["do", "to", "step", "in", "as", "is", "mod", "async", "public", "private", "protected"],
+  "builtins": ["print", "len", "str", "num", "int", "type", "keys", "values", "push", "pop", "time", "error", "sleep", "load"],
+  "operators": ["==", "!=", "<>", "<=", ">=", "+=", "-=", "*=", "/=", "..", "+", "-", "*", "/", "%", "^", "#", "<", ">", "=", "&"],
+  "annotations": {
+    "strict": "Turn on access and type checks for the file.",
+    "normal": "Turn those checks off.",
+    "public": "A class member is public. Same as the word public.",
+    "private": "A class member is private. Same as the word private.",
+    "protected": "A class member is protected. Same as the word protected."
+  },
+  "modules": {
+    "canvas": {
+      "summary": "A bitmap, sprites, and the frame loop.",
+      "specifier": "magic/canvas",
+      "exports": ["Canvas", "Engine", "Utilities"]
+    },
+    "terminal": {
+      "summary": "A cell grid for text, panels, and roguelike screens.",
+      "specifier": "magic/terminal",
+      "exports": ["Terminal", "Utilities"]
+    },
+    "2d": {
+      "summary": "Canvas and terminal together, the whole emoji-engine-2d package.",
+      "specifier": "emoji-engine-2d",
+      "exports": ["Canvas", "Terminal", "Engine", "Utilities"]
+    },
+    "3d": {
+      "summary": "A 3D scene, a camera, and billboards.",
+      "specifier": "emoji-engine-3d",
+      "exports": ["Canvas", "Terminal", "Engine", "Utilities"]
+    },
+    "ui": {
+      "summary": "Windows, buttons, and menus on a terminal.",
+      "specifier": "emoji-engine-ui",
+      "exports": ["Application", "messageBox", "confirm", "MenuBar", "StatusLine", "borland", "copyTheme", "linux", "theme", "Desktop", "Group", "View", "Button", "CheckBox", "InputLine", "Label", "ListBox", "ProgressBar", "RadioGroup", "ScrollBar", "StaticText", "Dialog", "Window"]
+    },
+    "sound": {
+      "summary": "Tones, notes, and noise.",
+      "specifier": "magic/sound",
+      "exports": ["Sound", "tone", "note", "noise", "play", "freq"]
+    },
+    "hex": {
+      "summary": "Hex grids, neighbors, distance, and pixel layout.",
+      "specifier": "magic/hex",
+      "exports": ["Hex", "Grid", "hex", "neighbor", "neighbors", "distance", "ring", "spiral", "line", "toPixel", "fromPixel", "add", "round", "key", "parse", "DIRECTIONS"]
+    },
+    "games": {
+      "summary": "Loops, keys, scenes, scores, and small bits of arithmetic.",
+      "specifier": "magic/games",
+      "exports": ["clamp", "lerp", "approach", "choice", "chance", "range", "wrap", "Clock", "Keys", "Loop", "Stage", "Score"]
+    }
+  },
+  "precedence": [
+    ["call", "member", "index"],
+    ["^"],
+    ["await", "unary-minus", "#"],
+    ["*", "/", "%", "mod"],
+    ["+", "-"],
+    ["..", "&"],
+    ["==", "!=", "<>", "<", ">", "<=", ">=", "not"],
+    ["and"],
+    ["or"]
+  ],
+  "values": {
+    "nil": null,
+    "falseValues": ["nil", "false", 0, ""],
+    "indexOrigin": 0
+  }
+}

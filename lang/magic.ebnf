@@ -1,0 +1,112 @@
+(*
+  MAGIC grammar.
+  Keywords match without regard to case. Names keep their case.
+  A newline ends a statement, except inside (), [], {}, after a comma, and after an operator.
+  ":" and ";" also end a statement.
+  "--" comments to the end of the line. REM does that when it is the first word on the line.
+  This is the shape a compiler can follow. LANGUAGE.md is the meaning.
+*)
+
+program        = { file annotation | statement } ;
+file annotation= annotation ;
+
+statement      = annotation , statement
+               | import
+               | fn decl
+               | class decl
+               | if
+               | while
+               | for
+               | repeat
+               | try
+               | return
+               | "break"
+               | "continue"
+               | let
+               | "print" , [ argument list ]
+               | "throw" , expression
+               | assignment
+               | call statement ;
+
+annotation     = "@" , module name , [ "as" , name ]
+               | "@" , name , [ "(" , [ expression , { "," , expression } ] , ")" ] ;
+
+module name    = "canvas" | "terminal" | "2d" | "3d" | "ui" | "sound" | "hex" | "games" ;
+
+import         = "import" , import names , "from" , string
+               | "import" , string , [ "as" , name ] ;
+
+import names   = import name , { "," , import name } ;
+import name    = name , [ "as" , name ]
+               | "default" , "as" , name ;
+
+fn decl        = [ "async" ] , "fn" , name , params , [ "as" , type ] , body , "end" ;
+fn value       = [ "async" ] , "fn" , params , [ "as" , type ] , body , "end" ;
+params         = "(" , [ param , { "," , param } ] , ")" ;
+param          = name , [ "as" , type ] ;
+body           = { statement } ;
+
+class decl     = "class" , name , [ "is" , name ] , { member } , "end" ;
+member         = { annotation } , [ access ] , field
+               | { annotation } , [ access ] , method ;
+access         = "public" | "private" | "protected" ;
+field          = [ "let" ] , name , [ "as" , type ] , "=" , expression ;
+method         = [ "async" ] , "fn" , name , params , [ "as" , type ] , body , "end" ;
+
+if             = "if" , expression , [ "then" ] , body ,
+                 { elseif } , [ "else" , body ] , "end" ;
+elseif         = ( "elseif" | "else" , "if" ) , expression , [ "then" ] , body ;
+
+while          = "while" , expression , [ "do" ] , body , "end" ;
+repeat         = "repeat" , body , "until" , expression ;
+for            = "for" , name , "=" , expression , "to" , expression , [ "step" , expression ] , [ "do" ] , body , "end"
+               | "for" , name , "in" , expression , [ "do" ] , body , "end" ;
+
+try            = "try" , body , [ "catch" , [ name ] , body ] , [ "finally" , body ] , "end" ;
+return         = "return" , [ expression ] ;
+let            = "let" , name , [ "as" , type ] , [ "=" , expression ] ;
+
+assignment     = target , assign op , expression ;
+assign op      = "=" | "+=" | "-=" | "*=" | "/=" ;
+target         = name | member expr | index expr ;
+call statement = call ;
+
+expression     = or ;
+or             = and , { "or" , and } ;
+and            = not , { "and" , not } ;
+not            = comparison , { ( "==" | "!=" | "<>" | "<" | ">" | "<=" | ">=" ) , comparison }
+               | "not" , not ;
+comparison     = join ;
+join           = sum , { ( ".." | "&" ) , sum } ;
+sum            = product , { ( "+" | "-" ) , product } ;
+product        = unary , { ( "*" | "/" | "%" | "mod" ) , unary } ;
+unary          = ( "await" | "-" | "#" ) , unary
+               | power ;
+power          = postfix , [ "^" , unary ] ;
+postfix        = primary , { call tail | member tail | index tail } ;
+primary        = number | string | "true" | "false" | "nil"
+               | name | "self"
+               | list | record
+               | fn value
+               | "new" , postfix , "(" , [ argument list ] , ")"
+               | "super" , [ "." , name ] , "(" , [ argument list ] , ")"
+               | "(" , expression , ")" ;
+
+call tail      = "(" , [ argument list ] , ")"
+               | string ;
+member tail    = "." , name ;
+index tail     = "[" , expression , "]" ;
+argument list  = expression , { "," , expression } ;
+
+list           = "[" , [ expression , { "," , expression } ] , "]" ;
+record         = "{" , [ field init , { "," , field init } ] , "}" ;
+field init     = ( name | string ) , ":" , expression ;
+
+type           = "any" | "number" | "int" | "string" | "bool" | "boolean"
+               | "fn" | "list" | "record" | "nil" | name ;
+
+name           = letter , { letter | digit | "_" } ;
+number         = digit , { digit } , [ "." , { digit } ] , [ ( "e" | "E" ) , [ "+" | "-" ] , digit , { digit } ] ;
+string         = '"' , { string char } , '"' | "'" , { string char } , "'" ;
+letter         = "A" | "B" | "C" (* ... *) | "_" | "a" | "b" | "c" (* ... *) ;
+digit          = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;

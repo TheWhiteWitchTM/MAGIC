@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The MAGIC language</title>
+  <link rel="icon" href="/mark.jpg">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="/">MAGIC</a>
+    <a href="/learn">Learn</a>
+    <a href="/modules">Modules</a>
+    <a href="/language">Language</a>
+    <a href="/play">Play</a>
+    <a href="/tools">Tools</a>
+  </nav>
+  <div class="page-title"><h1>Language</h1></div>
+  <main>
+    <p><a href="/LANGUAGE.md">LANGUAGE.md</a> is the definition: every form, every rule, every built-in word. A highlighter or another compiler should also read <a href="/lang/magic.language.json">lang/magic.language.json</a>, the <a href="/lang/magic.ebnf">EBNF</a>, and the <a href="/lang/magic.tmLanguage.json">TextMate grammar</a>.</p>
+    <h2>The shape</h2>
+    <ul>
+      <li>A newline ends a statement. <code>end</code> closes a block.</li>
+      <li>Keywords ignore case. Names keep their case.</li>
+      <li><code>=</code> assigns. <code>==</code> compares.</li>
+      <li><code>nil</code>, <code>false</code>, <code>0</code>, and <code>""</code> are false.</li>
+      <li>Indexes start at 0. <code>for i = 1 to 3</code> visits both ends.</li>
+      <li><code>fn</code> declares a function. <code>class</code> declares a class. <code>fn new</code> is the constructor.</li>
+      <li><code>@strict</code> checks the types you wrote with <code>as</code>.</li>
+      <li><code>@canvas</code> and the other module names load a library.</li>
+    </ul>
+<pre><code>class Counter
+  n = 0
+  fn new(start)
+    self.n = start
+  end
+  fn bump()
+    self.n = self.n + 1
+    return self.n
+  end
+end
+
+print Counter(1).bump()</code></pre>
+  </main>
+  <footer>MAGIC compiles to JavaScript.</footer>
+</body>
+</html>

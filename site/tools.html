@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAGIC tools</title>
+  <link rel="icon" href="/mark.jpg">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="/">MAGIC</a>
+    <a href="/learn">Learn</a>
+    <a href="/modules">Modules</a>
+    <a href="/language">Language</a>
+    <a href="/play">Play</a>
+    <a href="/tools">Tools</a>
+  </nav>
+  <div class="page-title"><h1>Tools</h1></div>
+  <main>
+    <table>
+      <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>magic run file.magic</code></td><td>Compile and run.</td></tr>
+        <tr><td><code>magic compile file.magic -o game.js</code></td><td>Write one JavaScript module.</td></tr>
+        <tr><td><code>magic app file.magic -o build/game</code></td><td>Write an Electron project.</td></tr>
+        <tr><td><code>magic pack file.magic --build</code></td><td>Write that project and build a standalone app.</td></tr>
+        <tr><td><code>magic serve</code></td><td>Open this site.</td></tr>
+        <tr><td><code>msx file.magic</code></td><td>Run MAGIC the way <code>tsx</code> runs TypeScript.</td></tr>
+        <tr><td><code>js2magic file.ts</code></td><td>Draft MAGIC from JavaScript or TypeScript.</td></tr>
+      </tbody>
+    </table>
+    <p>Inside an app folder, <code>npm start</code> opens the window and <code>npm run pack</code> writes a standalone build under <code>dist/</code>. The steps are in <a href="/tools/electron.md">tools/electron.md</a>.</p>
+    <h2>For editors and compilers</h2>
+    <ul>
+      <li><a href="/lang/magic.language.json">magic.language.json</a> — keywords, builtins, modules, exports</li>
+      <li><a href="/lang/magic.ebnf">magic.ebnf</a> — the grammar</li>
+      <li><a href="/lang/magic.tmLanguage.json">magic.tmLanguage.json</a> — TextMate</li>
+      <li><a href="/lang/magic.vim">magic.vim</a> — Vim</li>
+      <li><a href="/editors/vscode/README.md">editors/vscode</a> — a small extension</li>
+    </ul>
+    <p><a href="/INTERFACES.md">INTERFACES.md</a> is the compiler, the runtime, and the packager. <a href="/ARCHITECTURE.md">ARCHITECTURE.md</a> is how the pieces sit.</p>
+  </main>
+  <footer>MAGIC compiles to JavaScript.</footer>
+</body>
+</html>

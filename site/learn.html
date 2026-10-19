@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learn MAGIC</title>
+  <link rel="icon" href="/mark.jpg">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="/">MAGIC</a>
+    <a href="/learn">Learn</a>
+    <a href="/modules">Modules</a>
+    <a href="/language">Language</a>
+    <a href="/play">Play</a>
+    <a href="/tools">Tools</a>
+  </nav>
+  <div class="page-title"><h1>Learn</h1></div>
+  <main>
+    <p>The short course is <a href="/LEARN.md">LEARN.md</a>. This page is the same path, with the first programs you can paste into <a href="/play">the playground</a>.</p>
+    <h2>Hello</h2>
+<pre><code>fn greet(name)
+  return "Hello, " .. name
+end
+
+print greet("MAGIC")</code></pre>
+    <p><code>..</code> joins text. <code>print</code> writes a line. A newline ends a statement.</p>
+    <h2>A choice and a loop</h2>
+<pre><code>for i = 1 to 3
+  if i == 2 then
+    print "two"
+  else
+    print i
+  end
+end</code></pre>
+    <p><code>=</code> stores a value. <code>==</code> compares. <code>end</code> closes the block. <code>for i = 1 to 3</code> visits 1, 2, and 3.</p>
+    <h2>A module</h2>
+    <p><code>@canvas</code> loads the picture module. The names <code>Engine</code>, <code>Canvas</code>, and <code>Utilities</code> are then yours.</p>
+<pre><code>@canvas
+
+let engine = new Engine({ width: 320, height: 180 })
+let spark = engine.sprite("✦", 160, 90, 36)
+print type(engine)
+print spark.emoji</code></pre>
+    <p>Load a second module under a name when the two share an export: <code>@terminal as term</code>. The module list is on <a href="/modules">Modules</a>.</p>
+    <h2>Then</h2>
+    <p>Classes, strict types, hex boards, and packing an app are in <a href="/LEARN.md">LEARN.md</a>. The rules, every one of them, are in <a href="/LANGUAGE.md">LANGUAGE.md</a>.</p>
+  </main>
+  <footer>MAGIC compiles to JavaScript.</footer>
+</body>
+</html>

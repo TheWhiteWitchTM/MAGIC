@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAGIC</title>
+  <link rel="icon" href="/mark.jpg">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="/">MAGIC</a>
+    <a href="/learn">Learn</a>
+    <a href="/modules">Modules</a>
+    <a href="/language">Language</a>
+    <a href="/play">Play</a>
+    <a href="/tools">Tools</a>
+  </nav>
+  <header class="hero">
+    <img class="hero-art" src="/banner-art.jpg" alt="">
+    <div class="hero-scrim"></div>
+    <div class="hero-copy">
+      <img class="mark" src="/mark.jpg" alt="">
+      <h1>MAGIC</h1>
+      <p class="lede">A language for pictures, terminals, and games.</p>
+      <div class="actions">
+        <a class="button" href="/learn">Start learning</a>
+        <a class="button quiet" href="/play">Try a program</a>
+      </div>
+    </div>
+  </header>
+  <main>
+    <p>MAGIC mixes Lua and BASIC, and it compiles to JavaScript. <code>@canvas</code> loads a module. <code>end</code> closes a block. A script can be a first program or a game you pack into its own window.</p>
+    <div class="grid">
+      <article class="card">
+        <h3>Canvas</h3>
+        <p>Sprites, a bitmap, and a frame loop. The picture half of the 2D engine.</p>
+      </article>
+      <article class="card">
+        <h3>Terminal</h3>
+        <p>A cell grid for text games, panels, and the UI kit.</p>
+      </article>
+      <article class="card">
+        <h3>Sound, hex, games</h3>
+        <p>Notes, hex boards, clocks, scenes, and scores. They ship with the language.</p>
+      </article>
+    </div>
+    <h2>A program</h2>
+<pre><code>@canvas
+@games
+
+let engine = new Engine({ width: 320, height: 180 })
+let spark = engine.sprite("✦", 40, 90, 28)
+engine.motion(spark, 4, 0)
+
+for i = 1 to 10
+  engine.update()
+end
+
+print spark.x
+print clamp(spark.x, 0, 200)</code></pre>
+    <p><code>magic run</code> runs it. <code>magic app</code> turns it into an Electron project. <code>npm run pack</code> in that project builds a standalone app.</p>
+  </main>
+  <footer>MAGIC compiles to JavaScript. The definition is <a href="/LANGUAGE.md">LANGUAGE.md</a>.</footer>
+</body>
+</html>

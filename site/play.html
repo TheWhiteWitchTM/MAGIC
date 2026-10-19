@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Play MAGIC</title>
+  <link rel="icon" href="/mark.jpg">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="/">MAGIC</a>
+    <a href="/learn">Learn</a>
+    <a href="/modules">Modules</a>
+    <a href="/language">Language</a>
+    <a href="/play">Play</a>
+    <a href="/tools">Tools</a>
+  </nav>
+  <div class="page-title"><h1>Play</h1></div>
+  <main>
+    <p>Edit the program and run it. Output lands below. A canvas program draws in the frame beside the editor. This page is served by <code>magic serve</code>, which also provides the engine scripts.</p>
+    <div class="actions" style="margin-bottom: 1rem">
+      <button class="button" id="run" type="button">Run</button>
+      <button class="button quiet" id="sample-hex" type="button" style="color: var(--ink); box-shadow: inset 0 0 0 1px var(--line)">Hex</button>
+      <button class="button quiet" id="sample-canvas" type="button" style="color: var(--ink); box-shadow: inset 0 0 0 1px var(--line)">Canvas</button>
+    </div>
+    <div class="play-layout">
+      <textarea id="source" spellcheck="false"></textarea>
+      <iframe class="stage" id="stage" title="Program output"></iframe>
+    </div>
+    <h2>Output</h2>
+    <div id="log"></div>
+  </main>
+  <footer>MAGIC compiles to JavaScript.</footer>
+  <script src="/browser/magic.js"></script>
+  <script>
+    const source = document.getElementById('source');
+    const log = document.getElementById('log');
+    const stage = document.getElementById('stage');
+    const hexSample = `@hex\n@games\n\nlet here = hex(0, 0)\nprint distance(here, hex(2, -1))\nprint len(neighbors(here))\nprint clamp(9, 0, 4)\n`;
+    const canvasSample = `@canvas\n\nlet engine = new Engine({ width: 480, height: 270 })\nlet ui = Utilities.wrap(engine.canvas, { title: "Drift" })\ndocument.body.appendChild(ui.wrap)\nlet spark = engine.sprite("✦", 80, 135, 42)\nengine.motion(spark, 3, 0)\n\nfn frame()\n  engine.update()\n  engine.canvas.draw()\n  if spark.x > 430 then spark.x = 40 end\n  requestAnimationFrame(frame)\nend\n\nrequestAnimationFrame(frame)\nprint "drawing"\n`;
+    source.value = hexSample;
+
+    document.getElementById('sample-hex').onclick = () => { source.value = hexSample; };
+    document.getElementById('sample-canvas').onclick = () => { source.value = canvasSample; };
+
+    window.addEventListener('message', (event) => {
+      if (!event.data || event.data.magic === undefined) return;
+      log.textContent += event.data.magic + '\n';
+    });
+
+    document.getElementById('run').onclick = () => {
+      log.textContent = '';
+      let compiled;
+      try {
+        compiled = Magic.compile(source.value, { target: 'script', filename: 'play.magic' });
+      } catch (error) {
+        log.textContent = error && error.message ? error.message : String(error);
+        stage.srcdoc = '';
+        return;
+      }
+      const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#111;color:#eee;font:14px/1.4 ui-monospace,monospace}</style></head><body>
+<script src="/emoji-engine-2d/browser/emoji-engine-2d.js"><\/script>
+<script src="/emoji-engine-3d/browser/emoji-engine-3d.js"><\/script>
+<script src="/emoji-engine-ui/browser/emoji-engine-ui.js"><\/script>
+<script src="/browser/magic-stdlib.js"><\/script>
+<script>
+console.log = (...args) => parent.postMessage({ magic: args.map(String).join('\\t') }, '*');
+window.addEventListener('error', (event) => parent.postMessage({ magic: String(event.message) }, '*'));
+try { ${compiled.code} } catch (error) { parent.postMessage({ magic: String(error && error.stack || error) }, '*'); }
+<\/script></body></html>`;
+      stage.srcdoc = page;
+    };
+  </script>
+</body>
+</html>

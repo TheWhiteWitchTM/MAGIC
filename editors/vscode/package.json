@@ -1,0 +1,28 @@
+{
+  "name": "magic-lang",
+  "displayName": "MAGIC",
+  "description": "Syntax highlighting for the MAGIC language.",
+  "version": "0.1.0",
+  "publisher": "magic",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "magic",
+        "aliases": ["MAGIC", "magic"],
+        "extensions": [".magic"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "magic",
+        "scopeName": "source.magic",
+        "path": "./magic.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -1,9 +1,9 @@
-import Engine, Utilities from "canvas"
-import Terminal from "terminal"
-import Engine as World from "3d"
-import Application, Window, Button, Label from "ui"
-import greet from "./words.magic"
-import "canvas" as sprites
+@canvas
+@terminal as term
+@3d as World
+@ui
+@canvas as sprites
+use "./words"
 
 REM The counter checks field order: parent fields, then child fields, then new.
 
@@ -114,7 +114,7 @@ print score
 print box.extra
 print type(box)
 print type(Application)
-print type(World)
+print type(World.Engine)
 
 fn side()
   print "nope"
@@ -126,7 +126,7 @@ if false and side() then
 end
 
 let said = greet("spark")
-if said == "Hello, spark" and type(Engine) == "fn" and type(Terminal) == "fn" and type(Window) == "fn" and type(Button) == "fn" and type(Label) == "fn" and type(sprites.Engine) == "fn" and type(time()) == "number" then
+if said == "Hello, spark" and type(Engine) == "fn" and type(term.Terminal) == "fn" and type(World.Engine) == "fn" and type(Window) == "fn" and type(Button) == "fn" and type(Label) == "fn" and type(sprites.Engine) == "fn" and type(time()) == "number" then
   print "ok"
 else
   print "fail"

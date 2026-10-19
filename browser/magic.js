@@ -148,30 +148,6 @@ var Magic = (() => {
           case "let":
             this.bind(scope, stmt.name, stmt.type ? this.fromRef(stmt.type) : ANY);
             break;
-          case "for":
-            if (!scope.has(stmt.name))
-              this.bind(scope, stmt.name, ANY);
-            this.declareSurface(stmt.body, scope);
-            break;
-          case "if":
-            for (const arm of stmt.arms)
-              this.declareSurface(arm.body, scope);
-            if (stmt.elseBody)
-              this.declareSurface(stmt.elseBody, scope);
-            break;
-          case "while":
-          case "repeat":
-            this.declareSurface(stmt.body, scope);
-            break;
-          case "try":
-            this.declareSurface(stmt.body, scope);
-            if (stmt.catchName && !scope.has(stmt.catchName))
-              this.bind(scope, stmt.catchName, ANY);
-            if (stmt.catchBody)
-              this.declareSurface(stmt.catchBody, scope);
-            if (stmt.finallyBody)
-              this.declareSurface(stmt.finallyBody, scope);
-            break;
           case "assign":
             if (stmt.target.kind === "name" && !this.lookupBind(stmt.target.name) && !scope.has(stmt.target.name)) {
               this.bind(scope, stmt.target.name, ANY);
@@ -243,17 +219,17 @@ var Magic = (() => {
         case "if":
           for (const arm of stmt.arms) {
             this.infer(arm.test);
-            this.walkBody(arm.body);
+            this.inBlock(arm.body);
           }
           if (stmt.elseBody)
-            this.walkBody(stmt.elseBody);
+            this.inBlock(stmt.elseBody);
           return;
         case "while":
           this.infer(stmt.test);
-          this.walkBody(stmt.body);
+          this.inBlock(stmt.body);
           return;
         case "repeat":
-          this.walkBody(stmt.body);
+          this.inBlock(stmt.body);
           this.infer(stmt.test);
           return;
         case "for":
@@ -265,18 +241,28 @@ var Magic = (() => {
             this.infer(stmt.to);
           if (stmt.step)
             this.infer(stmt.step);
-          this.walkBody(stmt.body);
+          this.inBlock(stmt.body, stmt.name);
           return;
         case "try":
-          this.walkBody(stmt.body);
+          this.inBlock(stmt.body);
           if (stmt.catchBody)
-            this.walkBody(stmt.catchBody);
+            this.inBlock(stmt.catchBody, stmt.catchName ?? void 0);
           if (stmt.finallyBody)
-            this.walkBody(stmt.finallyBody);
+            this.inBlock(stmt.finallyBody);
           return;
         default:
           return;
       }
+    }
+    /** A block gets its own map, so a `let` inside it does not live on after `end`. */
+    inBlock(body, name) {
+      const scope = /* @__PURE__ */ new Map();
+      if (name)
+        this.bind(scope, name, ANY);
+      this.stack.push(scope);
+      this.declareSurface(body, scope);
+      this.walkBody(body);
+      this.stack.pop();
     }
     walkFn(body, params, type) {
       const inner = /* @__PURE__ */ new Map();
@@ -327,6 +313,13 @@ var Magic = (() => {
         case "number":
           return NUMBER;
         case "string":
+        case "template":
+          if (expr.kind === "template") {
+            for (const part of expr.parts) {
+              if ("expr" in part)
+                this.infer(part.expr);
+            }
+          }
           return STRING;
         case "bool":
           return BOOL;
@@ -600,6 +593,209 @@ var Magic = (() => {
     return list;
   }
 
+  // dist/optimize.js
+  function foldExpr(expr) {
+    switch (expr.kind) {
+      case "unary": {
+        const inner = foldExpr(expr.expr);
+        return foldUnary(expr, inner);
+      }
+      case "binary": {
+        const left = foldExpr(expr.left);
+        const right = foldExpr(expr.right);
+        return foldBinary(expr, left, right);
+      }
+      case "template": {
+        const parts = expr.parts.map((part) => "expr" in part ? { expr: foldExpr(part.expr) } : part);
+        let text = "";
+        for (const part of parts) {
+          if ("text" in part)
+            text += part.text;
+          else if (part.expr.kind === "string")
+            text += part.expr.value;
+          else
+            return { ...expr, parts };
+        }
+        return { kind: "string", value: text, line: expr.line, column: expr.column };
+      }
+      case "list":
+        return { ...expr, items: expr.items.map((item) => foldExpr(item)) };
+      case "record":
+        return { ...expr, fields: expr.fields.map((field) => ({ ...field, value: foldExpr(field.value) })) };
+      case "call":
+      case "new":
+        return {
+          ...expr,
+          callee: foldExpr(expr.callee),
+          args: expr.args.map((arg) => foldExpr(arg))
+        };
+      case "member":
+        return { ...expr, object: foldExpr(expr.object) };
+      case "index":
+        return { ...expr, object: foldExpr(expr.object), index: foldExpr(expr.index) };
+      case "await":
+        return { ...expr, expr: foldExpr(expr.expr) };
+      case "super":
+        return { ...expr, args: expr.args.map((arg) => foldExpr(arg)) };
+      default:
+        return expr;
+    }
+  }
+  function constantTruth(expr) {
+    switch (expr.kind) {
+      case "nil":
+        return false;
+      case "bool":
+        return expr.value;
+      case "number":
+        return expr.value !== 0 && !Number.isNaN(expr.value);
+      case "string":
+        return expr.value !== "";
+      case "list":
+      case "record":
+      case "fn":
+        return true;
+      default:
+        return null;
+    }
+  }
+  function foldUnary(expr, inner) {
+    if (expr.op === "not") {
+      const truth = constantTruth(inner);
+      if (truth === null)
+        return { ...expr, expr: inner };
+      return { kind: "bool", value: !truth, line: expr.line, column: expr.column };
+    }
+    if (expr.op === "-" && inner.kind === "number")
+      return numberExpr(-inner.value, expr);
+    if (expr.op === "#" && inner.kind === "string")
+      return numberExpr(Array.from(inner.value).length, expr);
+    if (expr.op === "#" && inner.kind === "list")
+      return numberExpr(inner.items.length, expr);
+    if (expr.op === "#" && inner.kind === "record") {
+      const keys = new Set(inner.fields.map((field) => field.name));
+      return numberExpr(keys.size, expr);
+    }
+    return { ...expr, expr: inner };
+  }
+  function foldBinary(expr, left, right) {
+    if (expr.op === "and" || expr.op === "or") {
+      const truth = constantTruth(left);
+      if (truth === null)
+        return { ...expr, left, right };
+      if (expr.op === "and")
+        return truth ? right : left;
+      return truth ? left : right;
+    }
+    if (expr.op === "&") {
+      const text = constText(left);
+      const more = constText(right);
+      if (text !== null && more !== null)
+        return { kind: "string", value: text + more, line: expr.line, column: expr.column };
+      return { ...expr, left, right };
+    }
+    if (left.kind === "number" && right.kind === "number") {
+      const value = numberOp(expr.op, left.value, right.value);
+      if (value !== null)
+        return numberExpr(value, expr);
+      const compared = compareOp(expr.op, left.value, right.value);
+      if (compared !== null)
+        return { kind: "bool", value: compared, line: expr.line, column: expr.column };
+    }
+    if (expr.op === "+" && constText(left) !== null && constText(right) !== null) {
+      return { kind: "string", value: `${constText(left)}${constText(right)}`, line: expr.line, column: expr.column };
+    }
+    if ((expr.op === "==" || expr.op === "!=" || expr.op === "<>") && bothConst(left) && bothConst(right)) {
+      const same = sameConst(left, right);
+      if (same !== null) {
+        const yes = expr.op === "==" ? same : !same;
+        return { kind: "bool", value: yes, line: expr.line, column: expr.column };
+      }
+    }
+    if ((expr.op === "<" || expr.op === ">" || expr.op === "<=" || expr.op === ">=") && left.kind === "string" && right.kind === "string") {
+      const compared = compareOp(expr.op, left.value, right.value);
+      if (compared !== null)
+        return { kind: "bool", value: compared, line: expr.line, column: expr.column };
+    }
+    return { ...expr, left, right };
+  }
+  function numberOp(op, left, right) {
+    switch (op) {
+      case "+":
+        return left + right;
+      case "-":
+        return left - right;
+      case "*":
+        return left * right;
+      case "/":
+        return left / right;
+      case "%":
+        return left % right;
+      case "^":
+        return left ** right;
+      default:
+        return null;
+    }
+  }
+  function compareOp(op, left, right) {
+    switch (op) {
+      case "==":
+        return left === right;
+      case "!=":
+      case "<>":
+        return left !== right;
+      case "<":
+        return left < right;
+      case ">":
+        return left > right;
+      case "<=":
+        return left <= right;
+      case ">=":
+        return left >= right;
+      default:
+        return null;
+    }
+  }
+  function constText(expr) {
+    if (expr.kind === "string")
+      return expr.value;
+    if (expr.kind === "number")
+      return String(expr.value);
+    if (expr.kind === "bool")
+      return expr.value ? "true" : "false";
+    if (expr.kind === "nil")
+      return "";
+    return null;
+  }
+  function bothConst(expr) {
+    return expr.kind === "number" || expr.kind === "string" || expr.kind === "bool" || expr.kind === "nil";
+  }
+  function sameConst(left, right) {
+    if (left.kind === "nil" && right.kind === "nil")
+      return true;
+    if (left.kind === "nil" || right.kind === "nil")
+      return false;
+    if (left.kind === "number" && right.kind === "number")
+      return left.value === right.value;
+    if (left.kind === "string" && right.kind === "string")
+      return left.value === right.value;
+    if (left.kind === "bool" && right.kind === "bool")
+      return left.value === right.value;
+    return null;
+  }
+  function numberExpr(value, at) {
+    let raw;
+    if (Number.isNaN(value))
+      raw = "NaN";
+    else if (value === Infinity)
+      raw = "Infinity";
+    else if (value === -Infinity)
+      raw = "-Infinity";
+    else
+      raw = String(value);
+    return { kind: "number", raw, value, line: at.line, column: at.column };
+  }
+
   // dist/modules.js
   var CANVAS_EXPORTS = ["Canvas", "Engine", "Utilities"];
   var TERMINAL_EXPORTS = ["Terminal", "Utilities"];
@@ -817,7 +1013,8 @@ var Magic = (() => {
     "catch",
     "finally",
     "throw",
-    "await"
+    "await",
+    "use"
   ]);
   var Lexer = class {
     source;
@@ -826,9 +1023,11 @@ var Magic = (() => {
     line = 1;
     column = 1;
     atLineStart = true;
-    constructor(source, filename = "") {
+    constructor(source, filename = "", line = 1, column = 1) {
       this.source = source.charCodeAt(0) === 65279 ? source.slice(1) : source;
       this.filename = filename;
+      this.line = line;
+      this.column = column;
     }
     tokenize() {
       const tokens = [];
@@ -861,6 +1060,11 @@ var Magic = (() => {
         this.newline();
         return { kind: "newline", value: "\n", line, column };
       }
+      if (ch === 36 && (this.source[this.i + 1] === '"' || this.source[this.i + 1] === "'")) {
+        return this.template(line, column);
+      }
+      if (ch === 34 && this.atTriple())
+        return this.longString(line, column);
       if (ch === 34 || ch === 39)
         return this.string(line, column);
       if (this.isDigit(ch) || ch === 46 && this.isDigit(this.codeAt(1)))
@@ -892,6 +1096,199 @@ var Magic = (() => {
         value += this.bump();
       }
       throw this.fail(line, column, "this string never ends");
+    }
+    /** `"""` may span lines. A newline right after the opening quotes is dropped. */
+    longString(line, column) {
+      this.bump();
+      this.bump();
+      this.bump();
+      this.dropLeadingBreak();
+      let value = "";
+      while (!this.done()) {
+        if (this.atTriple()) {
+          this.bump();
+          this.bump();
+          this.bump();
+          return { kind: "string", value, line, column };
+        }
+        if (this.code() === 10 || this.code() === 13) {
+          value += "\n";
+          this.newline();
+          continue;
+        }
+        if (this.char() === "\\") {
+          value += this.escape(line, column);
+          continue;
+        }
+        value += this.bump();
+      }
+      throw this.fail(line, column, "this string never ends");
+    }
+    /**
+     * `$"..."` and `$"""..."""`. `{expr}` is a hole. `{{` and `}}` are braces.
+     * The parser reads each hole as an expression.
+     */
+    template(line, column) {
+      this.bump();
+      const triple = this.atTriple();
+      const quote = this.char();
+      if (triple) {
+        this.bump();
+        this.bump();
+        this.bump();
+        this.dropLeadingBreak();
+      } else {
+        this.bump();
+      }
+      const parts = [];
+      let text = "";
+      const pushText = () => {
+        if (text === "")
+          return;
+        parts.push({ kind: "text", value: text });
+        text = "";
+      };
+      while (!this.done()) {
+        if (triple ? this.atTriple() : this.char() === quote) {
+          if (triple) {
+            this.bump();
+            this.bump();
+            this.bump();
+          } else
+            this.bump();
+          pushText();
+          return { kind: "template", value: "", parts, line, column };
+        }
+        if (!triple && (this.code() === 10 || this.code() === 13)) {
+          throw this.fail(this.line, this.column, "a string has to end on the same line");
+        }
+        if (this.char() === "{" && this.source[this.i + 1] === "{") {
+          text += "{";
+          this.bump();
+          this.bump();
+          continue;
+        }
+        if (this.char() === "}" && this.source[this.i + 1] === "}") {
+          text += "}";
+          this.bump();
+          this.bump();
+          continue;
+        }
+        if (this.char() === "{") {
+          pushText();
+          parts.push(this.hole());
+          continue;
+        }
+        if (this.code() === 10 || this.code() === 13) {
+          text += "\n";
+          this.newline();
+          continue;
+        }
+        if (this.char() === "\\") {
+          text += this.escape(line, column);
+          continue;
+        }
+        text += this.bump();
+      }
+      throw this.fail(line, column, "this string never ends");
+    }
+    hole() {
+      const line = this.line;
+      const column = this.column;
+      this.bump();
+      const start = this.i;
+      const startLine = this.line;
+      const startColumn = this.column;
+      let depth = 1;
+      while (!this.done() && depth > 0) {
+        const ch = this.char();
+        if (ch === '"' || ch === "'") {
+          this.skipQuoted();
+          continue;
+        }
+        if (ch === "{") {
+          depth += 1;
+          this.bump();
+          continue;
+        }
+        if (ch === "}") {
+          depth -= 1;
+          if (depth === 0)
+            break;
+          this.bump();
+          continue;
+        }
+        if (this.code() === 10 || this.code() === 13) {
+          this.newline();
+          continue;
+        }
+        this.bump();
+      }
+      if (depth !== 0)
+        throw this.fail(line, column, "this interpolation never ends");
+      const source = this.source.slice(start, this.i);
+      this.bump();
+      if (source.trim() === "")
+        throw this.fail(line, column, "this interpolation is empty");
+      return { kind: "hole", source, line: startLine, column: startColumn };
+    }
+    /** Skip a string inside an interpolation so its braces stay part of the text. */
+    skipQuoted() {
+      if (this.atTriple()) {
+        const line2 = this.line;
+        const column2 = this.column;
+        this.bump();
+        this.bump();
+        this.bump();
+        while (!this.done()) {
+          if (this.atTriple()) {
+            this.bump();
+            this.bump();
+            this.bump();
+            return;
+          }
+          if (this.char() === "\\") {
+            this.bump();
+            if (!this.done())
+              this.bump();
+            continue;
+          }
+          if (this.code() === 10 || this.code() === 13) {
+            this.newline();
+            continue;
+          }
+          this.bump();
+        }
+        throw this.fail(line2, column2, "this string never ends");
+      }
+      const quote = this.char();
+      const line = this.line;
+      const column = this.column;
+      this.bump();
+      while (!this.done()) {
+        if (this.char() === quote) {
+          this.bump();
+          return;
+        }
+        if (this.code() === 10 || this.code() === 13) {
+          throw this.fail(this.line, this.column, "a string has to end on the same line");
+        }
+        if (this.char() === "\\") {
+          this.bump();
+          if (!this.done())
+            this.bump();
+          continue;
+        }
+        this.bump();
+      }
+      throw this.fail(line, column, "this string never ends");
+    }
+    atTriple() {
+      return this.char() === '"' && this.source[this.i + 1] === '"' && this.source[this.i + 2] === '"';
+    }
+    dropLeadingBreak() {
+      if (this.code() === 10 || this.code() === 13)
+        this.newline();
     }
     escape(line, column) {
       this.bump();
@@ -1172,7 +1569,37 @@ var Magic = (() => {
     }
     if (loads.length > 0)
       program.body = [...loads, ...program.body];
+    expandStandardUses(program, claim);
     return program;
+  }
+  function expandStandardUses(program, claim) {
+    program.body = program.body.filter((stmt) => {
+      if (stmt.kind !== "import" || stmt.form !== "star")
+        return true;
+      const info = moduleBySpecifier(stmt.specifier);
+      if (!info)
+        return true;
+      const ann = {
+        name: info.name,
+        args: [],
+        called: false,
+        alias: null,
+        line: stmt.line,
+        column: stmt.column
+      };
+      const names = [];
+      for (const imported of info.exports) {
+        if (!claim(imported, info.name, ann, info.name))
+          continue;
+        names.push({ imported, local: imported });
+      }
+      if (names.length === 0)
+        return false;
+      stmt.form = "named";
+      stmt.names = names;
+      stmt.specifier = info.name;
+      return true;
+    });
   }
   function labelModule(label) {
     const bare = label.startsWith("@") ? label.slice(1) : label;
@@ -1309,6 +1736,12 @@ var Magic = (() => {
         for (const arg of expr.args)
           walkExpr(arg, visit);
         return;
+      case "template":
+        for (const part of expr.parts) {
+          if ("expr" in part)
+            walkExpr(part.expr, visit);
+        }
+        return;
       default:
         return;
     }
@@ -1373,7 +1806,7 @@ var Magic = (() => {
     "*=": "*=",
     "/=": "/="
   };
-  var Parser = class {
+  var Parser = class _Parser {
     tokens = [];
     i = 0;
     filename;
@@ -1432,6 +1865,8 @@ var Magic = (() => {
         switch (token.value) {
           case "import":
             return this.tag(this.importStmt(), annotations);
+          case "use":
+            return this.tag(this.useStmt(), annotations);
           case "fn":
             return this.tag(this.fnStmt(false), annotations);
           case "class":
@@ -1500,6 +1935,16 @@ var Magic = (() => {
       this.expectKeyword("from");
       const specifier = this.expectKind("string", "expected a module name in quotes").value;
       return { kind: "import", form: "named", specifier, alias: null, names, ...this.at(start) };
+    }
+    /** `use "canvas"` and `use "./words"`. `as` keeps the module under one name. */
+    useStmt() {
+      const start = this.next();
+      const specifier = this.expectKind("string", "expected a module name in quotes").value;
+      if (this.eatWord("as")) {
+        const alias = this.expectIdent();
+        return { kind: "import", form: "namespace", specifier, alias, names: [], via: "use", ...this.at(start) };
+      }
+      return { kind: "import", form: "star", specifier, alias: null, names: [], via: "use", ...this.at(start) };
     }
     fnStmt(async) {
       const start = this.next();
@@ -1808,14 +2253,10 @@ var Magic = (() => {
           expr = this.callAfter(expr);
           continue;
         }
-        if (this.peek().kind === "string" && (expr.kind === "name" || expr.kind === "member")) {
+        if ((this.peek().kind === "string" || this.peek().kind === "template") && (expr.kind === "name" || expr.kind === "member")) {
           const text = this.next();
-          expr = {
-            kind: "call",
-            callee: expr,
-            args: [{ kind: "string", value: text.value, ...this.at(text) }],
-            ...this.at(text)
-          };
+          const arg = text.kind === "template" ? this.templateExpr(text) : { kind: "string", value: text.value, ...this.at(text) };
+          expr = { kind: "call", callee: expr, args: [arg], ...this.at(text) };
           continue;
         }
         const chained = this.oneMember(expr);
@@ -1866,6 +2307,10 @@ var Magic = (() => {
       if (token.kind === "string") {
         this.next();
         return { kind: "string", value: token.value, ...this.at(token) };
+      }
+      if (token.kind === "template") {
+        this.next();
+        return this.templateExpr(token);
       }
       if (token.kind === "keyword" && token.value === "true") {
         this.next();
@@ -2317,6 +2762,33 @@ var Magic = (() => {
         this.fail(node, `${word} and ${fromAnn} disagree`);
       return word ?? fromAnn;
     }
+    templateExpr(token) {
+      const parts = [];
+      for (const part of token.parts ?? []) {
+        if (part.kind === "text") {
+          parts.push({ text: part.value });
+          continue;
+        }
+        parts.push({ expr: _Parser.expression(part.source, this.filename, part.line, part.column) });
+      }
+      return { kind: "template", parts, line: token.line, column: token.column };
+    }
+    /** One expression, used for the holes in a template. */
+    static expression(source, filename, line, column) {
+      const parser = new _Parser(filename);
+      parser.tokens = new Lexer(source, filename, line, column).tokenize();
+      parser.i = 0;
+      parser.skipNl();
+      if (parser.peek().kind === "eof") {
+        throw new MagicError("this interpolation is empty", line, column, filename);
+      }
+      const expr = parser.expression();
+      parser.skipNl();
+      const next = parser.peek();
+      if (next.kind !== "eof")
+        parser.fail(next, "this interpolation has extra text");
+      return expr;
+    }
   };
 
   // dist/std.js
@@ -2330,6 +2802,12 @@ var Magic = (() => {
 
 function __magic_cat(a, b) {
   return __magic_text(a) + __magic_text(b);
+}
+
+function __magic_fill() {
+  let out = '';
+  for (let i = 0; i < arguments.length; i += 1) out += __magic_text(arguments[i]);
+  return out;
 }
 
 function __magic_len(value) {
@@ -2494,6 +2972,7 @@ function __magic_load(url, as) {
     "__magic_pop",
     "__magic_time",
     "__magic_cat",
+    "__magic_fill",
     "__magic_iter",
     "__magic_inits",
     "__magic_super",
@@ -2606,6 +3085,7 @@ function __magic_load(url, as) {
       const asyncMain = this.hasTopAwait(program.body);
       this.w.line(`globalThis.__magic_module = (${asyncMain ? "async " : ""}() => {`);
       this.w.push();
+      this.w.line("'use strict';");
       for (const line of preludeInlineSource().split("\n"))
         this.w.line(line);
       for (const line of this.guards)
@@ -2705,9 +3185,9 @@ function __magic_load(url, as) {
       if (!this.esm)
         this.w.line(`return { ${this.exportNames().join(", ")} };`);
     }
-    emitHoist(scope) {
+    emitHoist(scope, skip) {
       for (const [name, kind] of scope.names) {
-        if (kind !== "let")
+        if (kind !== "let" || skip?.has(name))
           continue;
         if (this.esm && scope.kind === "module")
           this.w.line(`export let ${name};`);
@@ -2773,18 +3253,10 @@ function __magic_load(url, as) {
           this.emitIf(stmt);
           return;
         case "while":
-          this.w.line(`while (${this.expr(stmt.test)}) {`);
-          this.w.push();
-          this.emitLoop(stmt.body);
-          this.w.pop();
-          this.w.line("}");
+          this.emitWhile(stmt);
           return;
         case "repeat":
-          this.w.line("do {");
-          this.w.push();
-          this.emitLoop(stmt.body);
-          this.w.pop();
-          this.w.line(`} while (!(${this.expr(stmt.test)}));`);
+          this.emitRepeat(stmt);
           return;
         case "for":
           this.emitFor(stmt);
@@ -2796,81 +3268,145 @@ function __magic_load(url, as) {
     emitTry(stmt) {
       this.w.line("try {");
       this.w.push();
-      for (const inner of stmt.body)
-        this.emitStmt(inner);
+      this.emitScopeBody(stmt.body, stmt);
       this.w.pop();
       if (stmt.catchBody) {
-        if (stmt.catchName) {
-          this.w.line("} catch (__magic_e) {");
-          this.w.push();
-          this.w.line(`${stmt.catchName} = __magic_e;`);
-          for (const inner of stmt.catchBody)
-            this.emitStmt(inner);
-          this.w.pop();
-        } else {
-          this.w.line("} catch {");
-          this.w.push();
-          for (const inner of stmt.catchBody)
-            this.emitStmt(inner);
-          this.w.pop();
-        }
+        const skip = stmt.catchName ? /* @__PURE__ */ new Set([stmt.catchName]) : void 0;
+        this.w.line(stmt.catchName ? `} catch (${stmt.catchName}) {` : "} catch {");
+        this.w.push();
+        this.emitScopeBody(stmt.catchBody, stmt.catchBody, false, skip);
+        this.w.pop();
       }
       if (stmt.finallyBody) {
         this.w.line("} finally {");
         this.w.push();
-        for (const inner of stmt.finallyBody)
-          this.emitStmt(inner);
+        this.emitScopeBody(stmt.finallyBody, stmt.finallyBody);
         this.w.pop();
       }
       this.w.line("}");
     }
     emitIf(stmt) {
-      stmt.arms.forEach((arm, index) => {
+      const live = [];
+      for (const arm of stmt.arms) {
+        const folded = foldExpr(arm.test);
+        const known = constantTruth(folded);
+        if (known === false)
+          continue;
+        if (known === true) {
+          live.push({ test: null, body: arm.body, key: arm });
+          this.emitIfChain(live);
+          return;
+        }
+        live.push({ test: folded, body: arm.body, key: arm });
+      }
+      if (stmt.elseBody)
+        live.push({ test: null, body: stmt.elseBody, key: stmt.elseBody });
+      this.emitIfChain(live);
+    }
+    /** A constant-true arm, or an else, is the last piece and has a null test. */
+    emitIfChain(live) {
+      let tail = null;
+      if (live.length > 0 && live[live.length - 1].test === null) {
+        const last = live.pop();
+        tail = { body: last.body, key: last.key };
+      }
+      if (live.length === 0) {
+        if (tail)
+          this.emitBraced(tail.body, tail.key);
+        return;
+      }
+      live.forEach((arm, index) => {
         this.w.line(`${index === 0 ? "if" : "} else if"} (${this.expr(arm.test)}) {`);
         this.w.push();
-        for (const inner of arm.body)
-          this.emitStmt(inner);
+        this.emitScopeBody(arm.body, arm.key);
         this.w.pop();
       });
-      if (stmt.elseBody) {
+      if (tail) {
         this.w.line("} else {");
         this.w.push();
-        for (const inner of stmt.elseBody)
-          this.emitStmt(inner);
+        this.emitScopeBody(tail.body, tail.key);
         this.w.pop();
       }
       this.w.line("}");
+    }
+    emitWhile(stmt) {
+      const folded = foldExpr(stmt.test);
+      const known = constantTruth(folded);
+      if (known === false)
+        return;
+      this.w.line(`while (${known === true ? "true" : this.expr(folded)}) {`);
+      this.w.push();
+      this.emitScopeBody(stmt.body, stmt, true);
+      this.w.pop();
+      this.w.line("}");
+    }
+    emitRepeat(stmt) {
+      const folded = foldExpr(stmt.test);
+      const known = constantTruth(folded);
+      if (known === true) {
+        this.emitBraced(stmt.body, stmt, true);
+        return;
+      }
+      this.w.line("do {");
+      this.w.push();
+      this.emitScopeBody(stmt.body, stmt, true);
+      this.w.pop();
+      this.w.line(`} while (!(${known === false ? "false" : this.expr(folded)}));`);
     }
     emitFor(stmt) {
       if (stmt.iter) {
         const item = this.temp();
         this.w.line(`for (const ${item} of __magic_iter(${this.expr(stmt.iter)})) {`);
         this.w.push();
+        const saved = this.scope;
+        const savedLoop = this.loop;
+        this.scope = this.needScope(stmt, "for");
+        this.loop += 1;
+        this.emitHoist(this.scope);
         this.w.line(`${stmt.name} = ${item};`);
-        this.emitLoop(stmt.body);
+        for (const inner of stmt.body)
+          this.emitStmt(inner);
+        this.loop = savedLoop;
+        this.scope = saved;
         this.w.pop();
         this.w.line("}");
         return;
       }
+      const from = this.temp();
       const to = this.temp();
       const step = this.temp();
       this.w.line("{");
       this.w.push();
+      this.w.line(`const ${from} = ${this.expr(stmt.from)};`);
       this.w.line(`const ${to} = ${this.expr(stmt.to)};`);
       this.w.line(`const ${step} = ${stmt.step ? this.expr(stmt.step) : "1"};`);
-      this.w.line(`for (${stmt.name} = ${this.expr(stmt.from)}; ${step} >= 0 ? ${stmt.name} <= ${to} : ${stmt.name} >= ${to}; ${stmt.name} = ${stmt.name} + ${step}) {`);
+      this.w.line(`for (let ${stmt.name} = ${from}; ${step} >= 0 ? ${stmt.name} <= ${to} : ${stmt.name} >= ${to}; ${stmt.name} = ${stmt.name} + ${step}) {`);
       this.w.push();
-      this.emitLoop(stmt.body);
+      this.emitScopeBody(stmt.body, stmt, true, /* @__PURE__ */ new Set([stmt.name]));
       this.w.pop();
       this.w.line("}");
       this.w.pop();
       this.w.line("}");
     }
-    emitLoop(body) {
-      this.loop += 1;
+    /** Locals of this block are declared here, not on the function, so they die with the block. */
+    emitScopeBody(body, key, loop = false, skip) {
+      const saved = this.scope;
+      const savedLoop = this.loop;
+      this.scope = this.needScope(key, "block");
+      if (loop)
+        this.loop += 1;
+      this.emitHoist(this.scope, skip);
       for (const stmt of body)
         this.emitStmt(stmt);
-      this.loop -= 1;
+      this.loop = savedLoop;
+      this.scope = saved;
+    }
+    emitBraced(body, key, loop = false) {
+      this.w.line("{");
+      this.w.push();
+      this.emitScopeBody(body, key, loop);
+      this.w.pop();
+      this.w.line("}");
     }
     emitAssign(stmt) {
       const math = stmt.op === "=" ? null : stmt.op[0];
@@ -3020,12 +3556,19 @@ function __magic_load(url, as) {
       this.w = savedWriter;
       return `(${sub.text().trim()})`;
     }
-    expr(expr) {
+    expr(node) {
+      const expr = foldExpr(node);
       switch (expr.kind) {
         case "number":
           return expr.raw;
         case "string":
           return JSON.stringify(expr.value);
+        case "template": {
+          const args = expr.parts.map((part) => "text" in part ? JSON.stringify(part.text) : this.expr(part.expr));
+          if (args.length === 1 && expr.parts[0] && "text" in expr.parts[0])
+            return args[0];
+          return `__magic_fill(${args.join(", ")})`;
+        }
         case "bool":
           return expr.value ? "true" : "false";
         case "nil":
@@ -3143,8 +3686,13 @@ function __magic_load(url, as) {
     scanStmt(stmt, scope) {
       switch (stmt.kind) {
         case "import":
-          if (scope.kind !== "module")
-            this.oops(stmt, "import belongs at the top of the script");
+          if (scope.kind !== "module") {
+            const word = stmt.via === "use" ? "use" : "import";
+            this.oops(stmt, `${word} belongs at the top of the script`);
+          }
+          if (stmt.form === "star") {
+            this.oops(stmt, `cannot see the exports of ${JSON.stringify(stmt.specifier)} from here. Write use ${JSON.stringify(stmt.specifier)} as name`);
+          }
           if (stmt.form === "namespace" && stmt.alias)
             this.declare(scope, stmt.alias, "import", stmt);
           for (const name of stmt.names)
@@ -3160,29 +3708,6 @@ function __magic_load(url, as) {
           return;
         case "let":
           this.declare(scope, stmt.name, "let", stmt);
-          return;
-        case "for":
-          this.declare(scope, stmt.name, "let", stmt, true);
-          this.scanSurface(stmt.body, scope);
-          return;
-        case "if":
-          for (const arm of stmt.arms)
-            this.scanSurface(arm.body, scope);
-          if (stmt.elseBody)
-            this.scanSurface(stmt.elseBody, scope);
-          return;
-        case "while":
-        case "repeat":
-          this.scanSurface(stmt.body, scope);
-          return;
-        case "try":
-          this.scanSurface(stmt.body, scope);
-          if (stmt.catchName)
-            this.declare(scope, stmt.catchName, "let", stmt, true);
-          if (stmt.catchBody)
-            this.scanSurface(stmt.catchBody, scope);
-          if (stmt.finallyBody)
-            this.scanSurface(stmt.finallyBody, scope);
           return;
         case "assign":
           this.scanAssign(stmt, scope);
@@ -3226,17 +3751,17 @@ function __magic_load(url, as) {
         case "if":
           for (const arm of stmt.arms) {
             this.nestExpr(arm.test, scope);
-            this.scanNested(arm.body, scope);
+            this.analyzeBody(arm.body, this.blockScope(scope), arm);
           }
           if (stmt.elseBody)
-            this.scanNested(stmt.elseBody, scope);
+            this.analyzeBody(stmt.elseBody, this.blockScope(scope), stmt.elseBody);
           return;
         case "while":
           this.nestExpr(stmt.test, scope);
-          this.scanNested(stmt.body, scope);
+          this.analyzeBody(stmt.body, this.blockScope(scope), stmt);
           return;
         case "repeat":
-          this.scanNested(stmt.body, scope);
+          this.analyzeBody(stmt.body, this.blockScope(scope), stmt);
           this.nestExpr(stmt.test, scope);
           return;
         case "for":
@@ -3244,7 +3769,11 @@ function __magic_load(url, as) {
           this.nestExpr(stmt.to, scope);
           this.nestExpr(stmt.step, scope);
           this.nestExpr(stmt.iter, scope);
-          this.scanNested(stmt.body, scope);
+          {
+            const child = this.blockScope(scope);
+            this.declare(child, stmt.name, "let", stmt);
+            this.analyzeBody(stmt.body, child, stmt);
+          }
           return;
         case "let":
           this.nestExpr(stmt.init, scope);
@@ -3267,11 +3796,15 @@ function __magic_load(url, as) {
           this.nestExpr(stmt.value, scope);
           return;
         case "try":
-          this.scanNested(stmt.body, scope);
-          if (stmt.catchBody)
-            this.scanNested(stmt.catchBody, scope);
+          this.analyzeBody(stmt.body, this.blockScope(scope), stmt);
+          if (stmt.catchBody) {
+            const child = this.blockScope(scope);
+            if (stmt.catchName)
+              this.declare(child, stmt.catchName, "let", stmt);
+            this.analyzeBody(stmt.catchBody, child, stmt.catchBody);
+          }
           if (stmt.finallyBody)
-            this.scanNested(stmt.finallyBody, scope);
+            this.analyzeBody(stmt.finallyBody, this.blockScope(scope), stmt.finallyBody);
           return;
         default:
           return;
@@ -3325,17 +3858,19 @@ function __magic_load(url, as) {
         case "await":
           this.nestExpr(expr.expr, scope);
           return;
+        case "template":
+          for (const part of expr.parts) {
+            if ("expr" in part)
+              this.nestExpr(part.expr, scope);
+          }
+          return;
         default:
           return;
       }
     }
-    declare(scope, name, kind, node, reuse = false) {
-      const existing = scope.names.get(name);
-      if (existing) {
-        if (reuse && (existing === "let" || existing === "param"))
-          return;
+    declare(scope, name, kind, node) {
+      if (scope.names.has(name))
         this.oops(node, `${name} is already declared`);
-      }
       scope.names.set(name, kind);
     }
     lookup(name) {
@@ -3353,6 +3888,9 @@ function __magic_load(url, as) {
     }
     child(parent, kind) {
       return { kind, names: /* @__PURE__ */ new Map(), parent };
+    }
+    blockScope(parent) {
+      return { kind: "block", names: /* @__PURE__ */ new Map(), parent };
     }
     needScope(key, label) {
       const scope = this.scopes.get(key);
@@ -3444,6 +3982,8 @@ function __magic_load(url, as) {
           return expr.fields.some((field) => this.exprHasTopAwait(field.value));
         case "super":
           return expr.args.some((arg) => this.exprHasTopAwait(arg));
+        case "template":
+          return expr.parts.some((part) => "expr" in part && this.exprHasTopAwait(part.expr));
         default:
           return false;
       }

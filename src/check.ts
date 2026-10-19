@@ -146,24 +146,6 @@ class Checker {
         case 'let':
           this.bind(scope, stmt.name, stmt.type ? this.fromRef(stmt.type) : ANY);
           break;
-        case 'for':
-          if (!scope.has(stmt.name)) this.bind(scope, stmt.name, ANY);
-          this.declareSurface(stmt.body, scope);
-          break;
-        case 'if':
-          for (const arm of stmt.arms) this.declareSurface(arm.body, scope);
-          if (stmt.elseBody) this.declareSurface(stmt.elseBody, scope);
-          break;
-        case 'while':
-        case 'repeat':
-          this.declareSurface(stmt.body, scope);
-          break;
-        case 'try':
-          this.declareSurface(stmt.body, scope);
-          if (stmt.catchName && !scope.has(stmt.catchName)) this.bind(scope, stmt.catchName, ANY);
-          if (stmt.catchBody) this.declareSurface(stmt.catchBody, scope);
-          if (stmt.finallyBody) this.declareSurface(stmt.finallyBody, scope);
-          break;
         case 'assign':
           if (stmt.target.kind === 'name' && !this.lookupBind(stmt.target.name) && !scope.has(stmt.target.name)) {
             this.bind(scope, stmt.target.name, ANY);
@@ -231,16 +213,16 @@ class Checker {
       case 'if':
         for (const arm of stmt.arms) {
           this.infer(arm.test);
-          this.walkBody(arm.body);
+          this.inBlock(arm.body);
         }
-        if (stmt.elseBody) this.walkBody(stmt.elseBody);
+        if (stmt.elseBody) this.inBlock(stmt.elseBody);
         return;
       case 'while':
         this.infer(stmt.test);
-        this.walkBody(stmt.body);
+        this.inBlock(stmt.body);
         return;
       case 'repeat':
-        this.walkBody(stmt.body);
+        this.inBlock(stmt.body);
         this.infer(stmt.test);
         return;
       case 'for':
@@ -248,16 +230,26 @@ class Checker {
         if (stmt.from) this.infer(stmt.from);
         if (stmt.to) this.infer(stmt.to);
         if (stmt.step) this.infer(stmt.step);
-        this.walkBody(stmt.body);
+        this.inBlock(stmt.body, stmt.name);
         return;
       case 'try':
-        this.walkBody(stmt.body);
-        if (stmt.catchBody) this.walkBody(stmt.catchBody);
-        if (stmt.finallyBody) this.walkBody(stmt.finallyBody);
+        this.inBlock(stmt.body);
+        if (stmt.catchBody) this.inBlock(stmt.catchBody, stmt.catchName ?? undefined);
+        if (stmt.finallyBody) this.inBlock(stmt.finallyBody);
         return;
       default:
         return;
     }
+  }
+
+  /** A block gets its own map, so a `let` inside it does not live on after `end`. */
+  private inBlock(body: Stmt[], name?: string): void {
+    const scope = new Map<string, Bind>();
+    if (name) this.bind(scope, name, ANY);
+    this.stack.push(scope);
+    this.declareSurface(body, scope);
+    this.walkBody(body);
+    this.stack.pop();
   }
 
   private walkFn(body: Stmt[], params: Param[], type: TypeRef | null): void {
@@ -308,6 +300,12 @@ class Checker {
       case 'number':
         return NUMBER;
       case 'string':
+      case 'template':
+        if (expr.kind === 'template') {
+          for (const part of expr.parts) {
+            if ('expr' in part) this.infer(part.expr);
+          }
+        }
         return STRING;
       case 'bool':
         return BOOL;

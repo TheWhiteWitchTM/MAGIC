@@ -124,6 +124,8 @@ export class Parser {
             switch (token.value) {
                 case 'import':
                     return this.tag(this.importStmt(), annotations);
+                case 'use':
+                    return this.tag(this.useStmt(), annotations);
                 case 'fn':
                     return this.tag(this.fnStmt(false), annotations);
                 case 'class':
@@ -192,6 +194,16 @@ export class Parser {
         this.expectKeyword('from');
         const specifier = this.expectKind('string', 'expected a module name in quotes').value;
         return { kind: 'import', form: 'named', specifier, alias: null, names, ...this.at(start) };
+    }
+    /** `use "canvas"` and `use "./words"`. `as` keeps the module under one name. */
+    useStmt() {
+        const start = this.next();
+        const specifier = this.expectKind('string', 'expected a module name in quotes').value;
+        if (this.eatWord('as')) {
+            const alias = this.expectIdent();
+            return { kind: 'import', form: 'namespace', specifier, alias, names: [], via: 'use', ...this.at(start) };
+        }
+        return { kind: 'import', form: 'star', specifier, alias: null, names: [], via: 'use', ...this.at(start) };
     }
     fnStmt(async) {
         const start = this.next();
@@ -500,14 +512,13 @@ export class Parser {
                 expr = this.callAfter(expr);
                 continue;
             }
-            if (this.peek().kind === 'string' && (expr.kind === 'name' || expr.kind === 'member')) {
+            if ((this.peek().kind === 'string' || this.peek().kind === 'template') &&
+                (expr.kind === 'name' || expr.kind === 'member')) {
                 const text = this.next();
-                expr = {
-                    kind: 'call',
-                    callee: expr,
-                    args: [{ kind: 'string', value: text.value, ...this.at(text) }],
-                    ...this.at(text),
-                };
+                const arg = text.kind === 'template'
+                    ? this.templateExpr(text)
+                    : { kind: 'string', value: text.value, ...this.at(text) };
+                expr = { kind: 'call', callee: expr, args: [arg], ...this.at(text) };
                 continue;
             }
             const chained = this.oneMember(expr);
@@ -558,6 +569,10 @@ export class Parser {
         if (token.kind === 'string') {
             this.next();
             return { kind: 'string', value: token.value, ...this.at(token) };
+        }
+        if (token.kind === 'template') {
+            this.next();
+            return this.templateExpr(token);
         }
         if (token.kind === 'keyword' && token.value === 'true') {
             this.next();
@@ -1047,6 +1062,33 @@ export class Parser {
         if (word && fromAnn && word !== fromAnn)
             this.fail(node, `${word} and ${fromAnn} disagree`);
         return word ?? fromAnn;
+    }
+    templateExpr(token) {
+        const parts = [];
+        for (const part of token.parts ?? []) {
+            if (part.kind === 'text') {
+                parts.push({ text: part.value });
+                continue;
+            }
+            parts.push({ expr: Parser.expression(part.source, this.filename, part.line, part.column) });
+        }
+        return { kind: 'template', parts, line: token.line, column: token.column };
+    }
+    /** One expression, used for the holes in a template. */
+    static expression(source, filename, line, column) {
+        const parser = new Parser(filename);
+        parser.tokens = new Lexer(source, filename, line, column).tokenize();
+        parser.i = 0;
+        parser.skipNl();
+        if (parser.peek().kind === 'eof') {
+            throw new MagicError('this interpolation is empty', line, column, filename);
+        }
+        const expr = parser.expression();
+        parser.skipNl();
+        const next = parser.peek();
+        if (next.kind !== 'eof')
+            parser.fail(next, 'this interpolation has extra text');
+        return expr;
     }
 }
 //# sourceMappingURL=parser.js.map

@@ -63,11 +63,14 @@ export interface ImportName {
 
 export interface ImportStmt extends Node {
   kind: 'import';
-  form: 'side' | 'namespace' | 'named';
+  /** `star` is `use "file"` before the other file's exports are filled in. */
+  form: 'side' | 'namespace' | 'named' | 'star';
   specifier: string;
-  /** Local name for `import "path" as name`. */
+  /** Local name for `import "path" as name` and `use "path" as name`. */
   alias: string | null;
   names: ImportName[];
+  /** Set when the script wrote `use` rather than `import`. */
+  via?: 'use';
 }
 
 export interface FnStmt extends Node {
@@ -208,7 +211,8 @@ export type Expr =
   | NewExpr
   | FnExpr
   | SuperCallExpr
-  | AwaitExpr;
+  | AwaitExpr
+  | TemplateExpr;
 
 export interface NumberExpr extends Node {
   kind: 'number';
@@ -219,6 +223,12 @@ export interface NumberExpr extends Node {
 export interface StringExpr extends Node {
   kind: 'string';
   value: string;
+}
+
+/** `$"Hello, {name}"`. Text parts are literal. Expression parts are interpolated. */
+export interface TemplateExpr extends Node {
+  kind: 'template';
+  parts: Array<{ text: string } | { expr: Expr }>;
 }
 
 export interface BoolExpr extends Node {

@@ -1,5 +1,5 @@
-import Terminal from "terminal"
-import Application, Window, Label, Button from "ui"
+@terminal
+@ui
 
 let term = new Terminal({ cols: 40, rows: 12, showCursor: false })
 let app = new Application(term, { sound: false })

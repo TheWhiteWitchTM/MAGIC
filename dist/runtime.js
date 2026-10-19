@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Compiler } from './compiler.js';
 import { MagicError } from './error.js';
-import { commonDir, loadGraph, moduleFile, resolveMagicFile } from './graph.js';
+import { commonDir, expandUses, loadGraph, moduleFile, resolveMagicFile } from './graph.js';
 import { classifyJs, resolveJsFile, toEsmSource } from './jsmod.js';
 import { moduleFileUrl } from './locate.js';
 import { isMagicSpecifier, isRelativeJsSpecifier, moduleBySpecifier } from './modules.js';
@@ -44,6 +44,9 @@ export class Runtime {
     }
     async execute(entry, sources) {
         const loaded = loadGraph(entry, sources);
+        const byPath = new Map(loaded.map((mod) => [mod.absPath, mod.program]));
+        for (const mod of loaded)
+            expandUses(mod.program, mod.absPath, byPath);
         const graphRoot = commonDir(loaded.map((mod) => mod.absPath));
         const names = new Map();
         const used = new Set();

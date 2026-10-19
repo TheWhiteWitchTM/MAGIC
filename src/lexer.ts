@@ -35,6 +35,7 @@ export const KEYWORDS = new Set([
   'finally',
   'throw',
   'await',
+  'use',
 ]);
 
 /**
@@ -49,9 +50,11 @@ export class Lexer {
   private column = 1;
   private atLineStart = true;
 
-  constructor(source: string, filename = '') {
+  constructor(source: string, filename = '', line = 1, column = 1) {
     this.source = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source;
     this.filename = filename;
+    this.line = line;
+    this.column = column;
   }
 
   tokenize(): Token[] {
@@ -86,6 +89,10 @@ export class Lexer {
       return { kind: 'newline', value: '\n', line, column };
     }
 
+    if (ch === 36 && (this.source[this.i + 1] === '"' || this.source[this.i + 1] === "'")) {
+      return this.template(line, column);
+    }
+    if (ch === 34 && this.atTriple()) return this.longString(line, column);
     if (ch === 34 || ch === 39) return this.string(line, column);
     if (this.isDigit(ch) || (ch === 46 && this.isDigit(this.codeAt(1)))) return this.number(line, column);
     if (this.isIdentStart(ch)) return this.ident(line, column);
@@ -115,6 +122,197 @@ export class Lexer {
       value += this.bump();
     }
     throw this.fail(line, column, 'this string never ends');
+  }
+
+  /** `"""` may span lines. A newline right after the opening quotes is dropped. */
+  private longString(line: number, column: number): Token {
+    this.bump();
+    this.bump();
+    this.bump();
+    this.dropLeadingBreak();
+    let value = '';
+    while (!this.done()) {
+      if (this.atTriple()) {
+        this.bump();
+        this.bump();
+        this.bump();
+        return { kind: 'string', value, line, column };
+      }
+      if (this.code() === 10 || this.code() === 13) {
+        value += '\n';
+        this.newline();
+        continue;
+      }
+      if (this.char() === '\\') {
+        value += this.escape(line, column);
+        continue;
+      }
+      value += this.bump();
+    }
+    throw this.fail(line, column, 'this string never ends');
+  }
+
+  /**
+   * `$"..."` and `$"""..."""`. `{expr}` is a hole. `{{` and `}}` are braces.
+   * The parser reads each hole as an expression.
+   */
+  private template(line: number, column: number): Token {
+    this.bump();
+    const triple = this.atTriple();
+    const quote = this.char();
+    if (triple) {
+      this.bump();
+      this.bump();
+      this.bump();
+      this.dropLeadingBreak();
+    } else {
+      this.bump();
+    }
+    const parts: Token['parts'] = [];
+    let text = '';
+    const pushText = (): void => {
+      if (text === '') return;
+      parts.push({ kind: 'text', value: text });
+      text = '';
+    };
+    while (!this.done()) {
+      if (triple ? this.atTriple() : this.char() === quote) {
+        if (triple) {
+          this.bump();
+          this.bump();
+          this.bump();
+        } else this.bump();
+        pushText();
+        return { kind: 'template', value: '', parts, line, column };
+      }
+      if (!triple && (this.code() === 10 || this.code() === 13)) {
+        throw this.fail(this.line, this.column, 'a string has to end on the same line');
+      }
+      if (this.char() === '{' && this.source[this.i + 1] === '{') {
+        text += '{';
+        this.bump();
+        this.bump();
+        continue;
+      }
+      if (this.char() === '}' && this.source[this.i + 1] === '}') {
+        text += '}';
+        this.bump();
+        this.bump();
+        continue;
+      }
+      if (this.char() === '{') {
+        pushText();
+        parts.push(this.hole());
+        continue;
+      }
+      if (this.code() === 10 || this.code() === 13) {
+        text += '\n';
+        this.newline();
+        continue;
+      }
+      if (this.char() === '\\') {
+        text += this.escape(line, column);
+        continue;
+      }
+      text += this.bump();
+    }
+    throw this.fail(line, column, 'this string never ends');
+  }
+
+  private hole(): { kind: 'hole'; source: string; line: number; column: number } {
+    const line = this.line;
+    const column = this.column;
+    this.bump();
+    const start = this.i;
+    const startLine = this.line;
+    const startColumn = this.column;
+    let depth = 1;
+    while (!this.done() && depth > 0) {
+      const ch = this.char();
+      if (ch === '"' || ch === "'") {
+        this.skipQuoted();
+        continue;
+      }
+      if (ch === '{') {
+        depth += 1;
+        this.bump();
+        continue;
+      }
+      if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+        this.bump();
+        continue;
+      }
+      if (this.code() === 10 || this.code() === 13) {
+        this.newline();
+        continue;
+      }
+      this.bump();
+    }
+    if (depth !== 0) throw this.fail(line, column, 'this interpolation never ends');
+    const source = this.source.slice(start, this.i);
+    this.bump();
+    if (source.trim() === '') throw this.fail(line, column, 'this interpolation is empty');
+    return { kind: 'hole', source, line: startLine, column: startColumn };
+  }
+
+  /** Skip a string inside an interpolation so its braces stay part of the text. */
+  private skipQuoted(): void {
+    if (this.atTriple()) {
+      const line = this.line;
+      const column = this.column;
+      this.bump();
+      this.bump();
+      this.bump();
+      while (!this.done()) {
+        if (this.atTriple()) {
+          this.bump();
+          this.bump();
+          this.bump();
+          return;
+        }
+        if (this.char() === '\\') {
+          this.bump();
+          if (!this.done()) this.bump();
+          continue;
+        }
+        if (this.code() === 10 || this.code() === 13) {
+          this.newline();
+          continue;
+        }
+        this.bump();
+      }
+      throw this.fail(line, column, 'this string never ends');
+    }
+    const quote = this.char();
+    const line = this.line;
+    const column = this.column;
+    this.bump();
+    while (!this.done()) {
+      if (this.char() === quote) {
+        this.bump();
+        return;
+      }
+      if (this.code() === 10 || this.code() === 13) {
+        throw this.fail(this.line, this.column, 'a string has to end on the same line');
+      }
+      if (this.char() === '\\') {
+        this.bump();
+        if (!this.done()) this.bump();
+        continue;
+      }
+      this.bump();
+    }
+    throw this.fail(line, column, 'this string never ends');
+  }
+
+  private atTriple(): boolean {
+    return this.char() === '"' && this.source[this.i + 1] === '"' && this.source[this.i + 2] === '"';
+  }
+
+  private dropLeadingBreak(): void {
+    if (this.code() === 10 || this.code() === 13) this.newline();
   }
 
   private escape(line: number, column: number): string {

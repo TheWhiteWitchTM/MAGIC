@@ -55,6 +55,57 @@ export function loadGraph(entry: string, sources?: ReadonlyMap<string, string>):
   return order;
 }
 
+/**
+ * `use "./words"` brings in every top-level name that file exports.
+ * Standard modules are already expanded. JavaScript files need `as`.
+ */
+export function expandUses(program: Program, fromFile: string, modules: ReadonlyMap<string, Program>): void {
+  for (const stmt of program.body) {
+    if (stmt.kind !== 'import' || stmt.form !== 'star') continue;
+    if (!isMagicSpecifier(stmt.specifier)) {
+      throw new MagicError(
+        `use ${JSON.stringify(stmt.specifier)} needs a name. Write use ${JSON.stringify(stmt.specifier)} as name`,
+        stmt.line,
+        stmt.column,
+        fromFile,
+      );
+    }
+    const abs = resolveMagicFile(fromFile, stmt.specifier);
+    const dep = modules.get(abs);
+    if (!dep) throw new MagicError(`cannot find ${stmt.specifier}`, stmt.line, stmt.column, fromFile);
+    const names = topExports(dep);
+    if (names.length === 0) {
+      stmt.form = 'side';
+      stmt.names = [];
+      continue;
+    }
+    stmt.form = 'named';
+    stmt.names = names.map((name) => ({ imported: name, local: name }));
+  }
+}
+
+/** Names a file exports: top-level functions, classes, and locals. Block locals stay inside the block. */
+function topExports(program: Program): string[] {
+  const imported = new Set<string>();
+  for (const stmt of program.body) {
+    if (stmt.kind !== 'import') continue;
+    if (stmt.alias) imported.add(stmt.alias);
+    for (const name of stmt.names) imported.add(name.local);
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (name: string): void => {
+    if (!name || imported.has(name) || seen.has(name)) return;
+    seen.add(name);
+    out.push(name);
+  };
+  for (const stmt of program.body) {
+    if (stmt.kind === 'fn' || stmt.kind === 'class' || stmt.kind === 'let') add(stmt.name);
+    else if (stmt.kind === 'assign' && stmt.target.kind === 'name') add(stmt.target.name);
+  }
+  return out;
+}
+
 export { resolveJsFile } from './jsmod.js';
 
 /** `./witch` and `./witch.magic` both name a Magic file next to `fromFile`. */

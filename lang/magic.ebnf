@@ -12,6 +12,7 @@ file annotation= annotation ;
 
 statement      = annotation , statement
                | import
+               | use
                | fn decl
                | class decl
                | if
@@ -35,6 +36,7 @@ module name    = "canvas" | "terminal" | "2d" | "3d" | "ui" | "sound" | "hex" | 
 
 import         = "import" , import names , "from" , string
                | "import" , string , [ "as" , name ] ;
+use            = "use" , string , [ "as" , name ] ;
 
 import names   = import name , { "," , import name } ;
 import name    = name , [ "as" , name ]
@@ -84,7 +86,7 @@ unary          = ( "await" | "-" | "#" ) , unary
                | power ;
 power          = postfix , [ "^" , unary ] ;
 postfix        = primary , { call tail | member tail | index tail } ;
-primary        = number | string | "true" | "false" | "nil"
+primary        = number | string | template | "true" | "false" | "nil"
                | name | "self"
                | list | record
                | fn value
@@ -93,7 +95,8 @@ primary        = number | string | "true" | "false" | "nil"
                | "(" , expression , ")" ;
 
 call tail      = "(" , [ argument list ] , ")"
-               | string ;
+               | string
+               | template ;
 member tail    = "." , name ;
 index tail     = "[" , expression , "]" ;
 argument list  = expression , { "," , expression } ;
@@ -107,6 +110,10 @@ type           = "any" | "number" | "int" | "string" | "bool" | "boolean"
 
 name           = letter , { letter | digit | "_" } ;
 number         = digit , { digit } , [ "." , { digit } ] , [ ( "e" | "E" ) , [ "+" | "-" ] , digit , { digit } ] ;
-string         = '"' , { string char } , '"' | "'" , { string char } , "'" ;
+string         = '"' , { string char } , '"'
+               | "'" , { string char } , "'"
+               | '"""' , { string char | newline } , '"""' ;
+template       = ( '$"' | "$'" | '$"""' ) , { template piece } , ( '"' | "'" | '"""' ) ;
+template piece = string char | "{{" | "}}" | "{" , expression , "}" ;
 letter         = "A" | "B" | "C" (* ... *) | "_" | "a" | "b" | "c" (* ... *) ;
 digit          = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;

@@ -21,9 +21,9 @@ let name = "Ada"
 print "Hello, " .. name
 ```
 
-`..` joins text. `let` is optional the first time you store a name: `name = "Ada"` is the same local. A second `let name` in the same function is an error, which keeps a long script from quietly making two names.
+`..` joins text. `let` is optional the first time you store a name: `name = "Ada"` is the same local. A second `let name` in the same block is an error. A `let` inside `if` or a loop ends when that block ends, so the name does not stay alive for the rest of the function.
 
-Numbers are ordinary numbers. `10 / 4` is `2.5`. Text uses quotes. A list is `[1, 2, 3]`, and the first item is `bag[0]`. A record is `{ name: "Ada", hp: 3 }`, and you read `card.name` or `card["hp"]`.
+Numbers are ordinary numbers. `10 / 4` is `2.5`. Text uses quotes. Three quotes span lines. `$"Hello, {name}!"` fills the `{expression}`. A list is `[1, 2, 3]`, and the first item is `bag[0]`. A record is `{ name: "Ada", hp: 3 }`, and you read `card.name` or `card["hp"]`.
 
 `nil` means empty. `nil`, `false`, `0`, and `""` are the false values. Everything else is true, including a list.
 
@@ -51,7 +51,7 @@ for item in ["wand", "map"]
 end
 ```
 
-`for i = 1 to 3` visits 1, then 2, then 3. Both ends count. `for item in` walks a list.
+`for i = 1 to 3` visits 1, then 2, then 3. Both ends count. The counter exists only inside the loop. `for item in` walks a list, and that name ends with the loop too.
 
 ## Functions
 
@@ -108,9 +108,28 @@ print spark.x
 
 `new` builds an engine object, because `Engine` is a JavaScript class. Your own classes can be called with or without `new`.
 
-The modules are `canvas`, `terminal`, `2d`, `3d`, `ui`, `sound`, `hex`, and `games`. `@sound as audio` keeps them under one name, so `audio.note("A4", 200)` plays a note. [MODULES.md](MODULES.md) lists every export.
+The modules are `canvas`, `terminal`, `2d`, `3d`, `ui`, `sound`, `hex`, and `games`. `@sound as audio` keeps them under one name, so `audio.note("A4", 200)` plays a note. `@3d as world` does the same for the 3D engine: `world.Engine`. [MODULES.md](MODULES.md) lists every export.
 
-`import Engine from "canvas"` is the same load, for a file that wants one name and not the whole set.
+`use "canvas"` is the same load as `@canvas`. `import Engine from "canvas"` is the same module, for a file that wants one name and not the whole set.
+
+## A file you wrote
+
+A `.magic` file is a module. Every `fn`, `class`, and `let` at the top is an export. `examples/words.magic` is one:
+
+```
+fn greet(name)
+  return "Hello, " .. name
+end
+```
+
+Another file loads every export with `use`:
+
+```
+use "./words"
+print greet("Ada")
+```
+
+`use "./helpers.js" as helpers` loads a JavaScript file under one name. `import` is there when you want a single name from a long list.
 
 ## A hex board
 

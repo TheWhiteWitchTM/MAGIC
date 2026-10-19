@@ -1,6 +1,6 @@
 import type { Annotation, Expr, ImportStmt, Program, Stmt } from './ast.js';
 import { MagicError } from './error.js';
-import { MODULES, moduleKey, type ModuleName } from './modules.js';
+import { MODULES, moduleBySpecifier, moduleKey, type ModuleName } from './modules.js';
 
 /**
  * `@canvas` and `@sound as audio` become imports.
@@ -114,7 +114,35 @@ export function lowerModules(program: Program): Program {
     walkInside(stmt, (node) => store(node, false));
   }
   if (loads.length > 0) program.body = [...loads, ...program.body];
+  expandStandardUses(program, claim);
   return program;
+}
+
+/** `use "canvas"` becomes a named import of every export. A file `use` stays a star. */
+function expandStandardUses(program: Program, claim: (local: string, from: string, ann: Annotation, mod: ModuleName) => boolean): void {
+  program.body = program.body.filter((stmt) => {
+    if (stmt.kind !== 'import' || stmt.form !== 'star') return true;
+    const info = moduleBySpecifier(stmt.specifier);
+    if (!info) return true;
+    const ann: Annotation = {
+      name: info.name,
+      args: [],
+      called: false,
+      alias: null,
+      line: stmt.line,
+      column: stmt.column,
+    };
+    const names: ImportStmt['names'] = [];
+    for (const imported of info.exports) {
+      if (!claim(imported, info.name, ann, info.name)) continue;
+      names.push({ imported, local: imported });
+    }
+    if (names.length === 0) return false;
+    stmt.form = 'named';
+    stmt.names = names;
+    stmt.specifier = info.name;
+    return true;
+  });
 }
 
 function labelModule(label: string): ModuleName | null {
@@ -232,6 +260,11 @@ function walkExpr(expr: Expr, visit: (node: { annotations?: Annotation[] }) => v
       return;
     case 'super':
       for (const arg of expr.args) walkExpr(arg, visit);
+      return;
+    case 'template':
+      for (const part of expr.parts) {
+        if ('expr' in part) walkExpr(part.expr, visit);
+      }
       return;
     default:
       return;

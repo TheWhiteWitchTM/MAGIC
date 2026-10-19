@@ -51,7 +51,7 @@ These words are structure. They cannot be variable names, parameters, functions,
 
 | Word | Role |
 | --- | --- |
-| `import`, `from` | Modules |
+| `import`, `from`, `use` | Modules |
 | `fn`, `return`, `end` | Functions |
 | `class`, `new`, `self`, `super` | Classes |
 | `let` | A declared local |
@@ -71,7 +71,7 @@ These words are names, and they are also part of one phrase. Outside that phrase
 | `do` | Optional after `while` and `for` |
 | `to`, `step` | `for i = 1 to 10 step 2` |
 | `in` | `for item in bag` |
-| `as` | `import Engine as World from "3d"`, `@canvas as gfx`, and a type: `let hp as number` |
+| `as` | `use "3d" as world`, `@3d as world`, `import Engine as World from "3d"`, and a type: `let hp as number` |
 | `is` | `class Child is Parent` |
 | `mod` | Remainder between two values: `10 mod 3` |
 | `async` | Optional before `fn`: `async fn load()` |
@@ -89,17 +89,17 @@ Magic already rejects most of those as keywords. The ones Magic would otherwise 
 
 Magic looks for a name in this order:
 
-1. A parameter, local, function, or class in the current function.
-2. The same kinds of names in each function outside that, out to the file.
-3. An import in this file.
+1. A parameter, local, function, or class in the current block.
+2. The same kinds of names in each block outside that, out to the file.
+3. An import or a `use` in this file.
 4. A built-in word: `len`, `str`, `num`, `int`, `type`, `keys`, `values`, `push`, `pop`, `time`, `error`, `sleep`, `load`.
 5. A property of `globalThis`.
 
 `globalThis` itself is the JavaScript global object. `document`, `Math`, and `requestAnimationFrame` are found in step 5. An unknown name that is missing there is an empty value.
 
-Assignment follows a stricter rule. The first assignment to a new name creates a local in the current function, or at the top of the file. Magic will not assign over an import, a function, a class, or a built-in word. Writing `score = 1` stores a local. It does not store `globalThis.score`. To write a global property, assign the property: `globalThis.marker = 9`.
+Assignment follows a stricter rule. The first assignment to a new name creates a local in the current block. Magic will not assign over an import, a function, a class, or a built-in word. Writing `score = 1` stores a local. It does not store `globalThis.score`. To write a global property, assign the property: `globalThis.marker = 9`.
 
-A local belongs to the whole function, including the lines above the assignment and the functions nested inside it. Until the assignment runs, the local is empty. A nested function sees the value from the moment of the call.
+A local belongs to the block that created it. The name covers the lines of that block, including the lines above the assignment, and a function nested inside the block. Until the assignment runs, the local is empty. A nested function sees the value from the moment of the call, when that function was created in the same block.
 
 ```
 fn nested_see()
@@ -113,23 +113,58 @@ end
 
 `nested_see()` is `5`. A call to `inner()` placed above `score = 5` would see an empty `score`.
 
-A second `let` of the same name in that function is the error `is already declared`. The two `let`s can sit in different `if` arms and still clash, because the name covers the function. A `for` may reuse a local or a parameter.
+Each arm of `if`, each `else`, and the body of `while`, `repeat`, `for`, `try`, `catch`, and `finally` is its own block. A function body is a block. The top of a file is a block. When the block ends, the local ends with it. The value can be collected then, unless a function created inside the block escaped and still uses the name. A name from an inner block is not kept alive for the rest of the function.
 
-`let` may omit the value. The name exists and stays empty until something assigns it. In `@strict`, a `let` may also name a type with `as`. See [Types](#types).
+```
+if true then
+  let secret = "x"
+end
+print type(secret)
+```
+
+That prints `nil`. `secret` was never a name of the outer block, so the print reads `globalThis.secret`, which is empty.
+
+An inner block may reuse a name from outside. The inner name hides the outer one until the inner block ends. The outer value stays as it was.
+
+```
+let n = 1
+if true then
+  let n = 2
+  print n
+end
+print n
+```
+
+That prints `2`, then `1`.
+
+A second `let` of the same name in the same block is the error `is already declared`. Two `let`s in different `if` arms do not clash. Each arm is its own block.
+
+`let` may omit the value. The name exists in that block and stays empty until something assigns it. In `@strict`, a `let` may also name a type with `as`. See [Types](#types).
 
 ```
 let score
 score = 1
 ```
 
-The first assignment can omit `let`. These two are the same local:
+The first assignment can omit `let`. These two are the same local when they sit in the same block:
 
 ```
 let score = 1
 score = 1
 ```
 
-At the top of a file, every `fn`, `class`, and `let` is exported, including a local that was created by a bare assignment. An import is not exported again. A local inside a function stays in that function.
+A bare assignment inside `if` or a loop creates a local of that block. After the block, a read of that name looks at `globalThis`. It is not an export.
+
+The test of `if`, `while`, and `until` sees the names outside the body. It does not see a name created inside the body. Declare that name first:
+
+```
+let n = 0
+repeat
+  n = n + 1
+until n == 4
+```
+
+At the top of a file, every `fn`, `class`, and `let` written in that top block is exported, including a local created by a bare assignment at the top. A name brought in by `use` or `import` is not exported again. A `fn` or `let` written inside `if` or a loop is not exported. A local inside a function stays in that function.
 
 Assigning to a built-in reports `is a Magic word`. Assigning to an import reports `is imported`. Assigning to a function reports `is a function`. Assigning to a class reports `is a class`.
 
@@ -189,7 +224,25 @@ Numbers are JavaScript numbers. `10 / 4` is `2.5`. There is no separate integer 
 
 ### Text
 
-A string uses `"` or `'`. It ends on the same line. There is no interpolation. These escapes work:
+A string uses `"` or `'`. A one-line string ends on the same line. A long string uses three double quotes and may span lines. A newline immediately after the opening `"""` is not part of the text. `'''` is not a long string.
+
+```
+let poem = """
+line one
+line two
+"""
+```
+
+A template starts with `$` and fills each `{expression}` from a Magic expression. `$"..."`, `$'...'`, and `$"""..."""` are templates. The result is always text. `$"{1 + 2}"` is `"3"`, not the number `3`.
+
+```
+let name = "Ada"
+print $"Hello, {name}!"
+```
+
+`{{` is a `{`. `}}` is a `}`. An empty `{}` is the error `this interpolation is empty`. A hole that never closes is `this interpolation never ends`. Text after the expression, still inside the hole, is `this interpolation has extra text`. A name or a property followed by a template is a call with that one string: `greet $"Ada"` is `greet($"Ada")`.
+
+These escapes work inside every string, including a long string and a template:
 
 | Escape | Character |
 | --- | --- |
@@ -335,13 +388,21 @@ for i = 3 to 1 step -1
 end
 ```
 
-`do` is optional. Both ends are visited. `for i = 1 to 3` visits `1`, then `2`, then `3`. `step` defaults to `1`. A negative step walks downward. `to` and `step` are read once, before the body. Changing them inside the loop leaves the end and the step as they were.
+`do` is optional. Both ends are visited. `for i = 1 to 3` visits `1`, then `2`, then `3`. `step` defaults to `1`. A negative step walks downward. The start, the end, and the step are read once, in the block outside the loop, before the body. Changing them inside the loop leaves the end and the step as they were.
 
-`continue` still applies the step. After the loop finishes, the counter sits one step past the end: `for i = 1 to 3` leaves `i` at `4`, and `for i = 3 to 1 step -1` leaves `i` at `0`. If the body never runs, the counter has still been set to the start. `for k = 1 to 0` leaves `k` at `1`.
+`continue` still applies the step. A step of `0` does not move the counter. If the start already satisfies the test, the loop does not end.
 
-A step of `0` does not move the counter. If the start already satisfies the test, the loop does not end.
+The counter is a new local for that loop. It hides an outer name and does not change it. After `end` the counter is gone, including when the body never ran. There is no leftover value one step past the end.
 
-The counter is a local of the function. A `for` may reuse a name that already exists.
+```
+let i = 9
+for i = 1 to 2
+  print i
+end
+print i
+```
+
+That prints `1`, then `2`, then `9`. A `let i` in the body is `is already declared`, because the counter and the body share that block.
 
 ### for, walking
 
@@ -358,7 +419,7 @@ end
 | string | the next code point |
 | `nil`, a number, a bool, a function | nothing |
 
-When the walk produces nothing, the name keeps the value it had. After a walk that produced items, the name keeps the last one.
+The name is a local of the loop body. After `end` it is gone. A walk that produces nothing does not leave a value behind. An outer name of the same spelling is unchanged.
 
 ### try
 
@@ -388,7 +449,20 @@ finally
 end
 ```
 
-`err` is a function-scoped local, the same as a `for` counter. A `try` may reuse a name that already exists. After a catch that ran, the name keeps the error. After a catch that did not run, the name stays as it was.
+`err` exists only in the catch. After `end` it is not that error. To keep the message, store it in a name that already exists outside the `try`.
+
+```
+let kept = ""
+try
+  throw "x"
+catch err
+  kept = err.message
+end
+print kept
+print type(err)
+```
+
+That prints `x`, then `nil`. `catch` may reuse a spelling from outside. The outer name is unchanged when the catch ends.
 
 `return`, `break`, and `continue` inside `try` still run `finally` before they leave, the way JavaScript does.
 
@@ -473,13 +547,13 @@ Parameters are names in parentheses. A repeated parameter is `is already a param
 
 A call writes parentheses around the arguments. A name or a property followed by a string is a call with that one string: `greet "Ada"` is `greet("Ada")`, and `box.label "x"` is `box.label("x")`. Any other argument uses parentheses: `greet(name)`, `bag[0]("x")`.
 
-A `fn name` written directly in a function, or at the top of the file, is available anywhere in that function or file, including above its own line. `greet` may call `twice` when `twice` is written further down. Write a top-level `fn` outside `if` and loops.
+A `fn name` written directly in a function, or at the top of the file, is available anywhere in that function or file, including above its own line. `greet` may call `twice` when `twice` is written further down. Write a top-level `fn` outside `if` and loops. A `fn` inside `if` or a loop is not exported.
 
 A `fn name` written inside `if`, `while`, `for`, or `repeat` is available in that block. Call it from inside the block.
 
-A function value stored with `let` receives its value at that line. The name exists earlier, and a call before the line sees an empty local. Locals follow that same rule: the name covers the whole function, and the value arrives at the assignment.
+A function value stored with `let` receives its value at that line. The name exists from the start of its block, and a call before the line sees an empty local.
 
-A nested function keeps the locals of the function that contains it. A nested function inside a method keeps that method's `self` and `super`.
+A nested function keeps the locals of the blocks that contain it. When the block ends, those locals can be collected, unless the nested function escaped and still uses them. A nested function inside a method keeps that method's `self` and `super`.
 
 ```
 fn bump()
@@ -497,7 +571,7 @@ end
 
 ## Classes
 
-Write a class at the top level of the file, outside `if` and loops. A class inside a function is the error `class belongs at the top of the script`.
+Write a class at the top level of the file, outside `if` and loops. A class inside a function, an `if`, or a loop is the error `class belongs at the top of the script`.
 
 ```
 class Box
@@ -664,7 +738,7 @@ let engine = new Engine({ width: 320, height: 180 })
 let screen = new term.Terminal({ cols: 40, rows: 8, canvas: engine.canvas })
 ```
 
-`import` still works, and it is the form to use when you want a few names rather than the whole module. A module annotation and an import of the same module may name the same binding once. Two different modules may not.
+`use "canvas"` is the same load as `@canvas`. `use "3d" as world` is the same load as `@3d as world`. `import` still works, and it is the form to use when you want a few names rather than the whole module. A module annotation, a `use`, and an import of the same module may name the same binding once. Two different modules may not.
 
 The full export lists are in [MODULES.md](MODULES.md) and in [lang/magic.language.json](lang/magic.language.json).
 
@@ -899,13 +973,27 @@ A missing file or a failed fetch throws `cannot load` and the path. Catch it wit
 
 ## Modules
 
-Write an import at the top level of the file, outside `if` and loops. It can sit above or below functions. An import inside a function is the error `import belongs at the top of the script`. The names it binds are visible through the whole file.
+The usual way to load a standard module is an annotation. [Module annotations](#module-annotations) lists them. `use` is the same load, and it is also how a file you wrote becomes a module.
 
 ```
-import Engine, Utilities from "canvas"
-import Terminal from "terminal"
+@canvas
+@3d as world
+use "./words"
+use "./helpers.js" as helpers
+
+print greet("Ada")
+print type(world.Engine)
+```
+
+`use "canvas"` binds every export, like `@canvas`. `use "3d" as world` binds the module under one name. `use "./words"` binds every top-level `fn`, `class`, and `let` from that Magic file. A file is a module because those names are its exports. There is no export mark.
+
+A JavaScript file needs a name: `use "./helpers.js" as helpers`. Without `as`, the error is `needs a name`. `use` inside a function or a class is `use belongs at the top of the script`. The names it binds are visible through the whole file.
+
+`import` picks names. Write it at the top level, outside `if` and loops. It can sit above or below functions. An import inside a function is the error `import belongs at the top of the script`.
+
+```
+import Engine from "canvas"
 import Engine as World from "3d"
-import Application, Window, Button, Label from "ui"
 import greet from "./words.magic"
 import shout, add from "./helpers.js"
 import default as twice from "./helpers.js"
@@ -914,7 +1002,7 @@ import "canvas" as sprites
 import "./boot.magic"
 ```
 
-There are three forms.
+`import` has three forms.
 
 | Form | What you get |
 | --- | --- |
@@ -963,7 +1051,7 @@ fn greet(name)
 end
 ```
 
-Another file says `import greet from "./words.magic"` and calls `greet("witch")`.
+Another file says `use "./words"` and calls `greet("witch")`. `import greet from "./words.magic"` picks that one name.
 
 A classic script compiled for a page can import any standard module. It reads the browser globals in the table above. Bringing in another `.magic` file is the job of `magic run` and `magic compile`. That split is specified in [INTERFACES.md](INTERFACES.md).
 
@@ -1012,6 +1100,9 @@ The compiler reports `file:line:column message` and stops before the script runs
 | `super needs a parent. Write class Child is Parent` | `super` was used in a class with no `is` |
 | `class belongs at the top of the script` | A class was nested |
 | `import belongs at the top of the script` | An import was nested |
+| `use belongs at the top of the script` | A `use` was nested |
+| `needs a name` | `use` of a JavaScript or JSON file had no `as` |
+| `cannot see the exports of` | `use "./file"` was compiled as one snippet, with no file graph. `magic run` and `magic compile` can see the file. `use "./file" as name` works in one snippet |
 | `write class Parent before class Child` | The parent class is lower in the same file |
 | `new is the constructor. Write fn new()` | A field was named `new` |
 | `Name is already in class Box` | A field or method was repeated |
@@ -1020,7 +1111,10 @@ The compiler reports `file:line:column message` and stops before the script runs
 | `this function needs a name. Use fn name(), or fn() inside an expression` | `fn()` was used as a statement |
 | `a named fn is a statement. Here, write fn(x)` | A function value was given a name |
 | `a string has to end on the same line` | A quote ran past the line |
-| `this string never ends` | The closing quote is missing |
+| `this string never ends` | The closing quote, or the closing `"""`, is missing |
+| `this interpolation never ends` | A template hole has no `}` |
+| `this interpolation is empty` | A template hole is `{}` |
+| `this interpolation has extra text` | A template hole holds more than one expression |
 | `unknown escape` | The backslash was not one of the escapes |
 | `import cycle:` | Two Magic files import each other |
 | `cannot find` | An import path has no file |
@@ -1043,8 +1137,16 @@ The compiler reports `file:line:column message` and stops before the script runs
 | `cannot assign string to number` | A written type did not match the value |
 | `cannot call a number` | A value the checker knew was not a function was called |
 
+## What the compiler simplifies
+
+Constant arithmetic, comparisons, and string joins fold before the script runs. `print 2 * 5` compiles as a print of `10`. `false and side()` compiles as `false`, and `side` is not called. That is the same rule `and` and `or` already follow: the side that is not chosen does not run.
+
+An `if` arm whose test is the constant `false` is left out of the JavaScript, including a local that exists only there. An arm whose test is the constant `true` keeps that arm and drops every arm after it. `while false` compiles to nothing. `repeat` until a constant `true` runs the body once.
+
+The type check still reads a dead arm. A type error inside `if false` is still an error. Folding does not drop a call that might run, and it does not rewrite `x * 1`.
+
 ## What a script cannot say
 
-Magic has no `switch`. It has no default parameters, no rest parameters, and no destructuring. It has no string interpolation and no multiline string. It has no slice syntax. It has no static methods and no getters. Types, when you write them, are a short list of names: there are no unions, generics, or `?`. A class has one parent. A script cannot define a new operator. `fn new` cannot be `async`.
+Magic has no `switch`. It has no default parameters, no rest parameters, and no destructuring. It has no slice syntax. It has no static methods and no getters. Types, when you write them, are a short list of names: there are no unions, generics, or `?`. A class has one parent. A script cannot define a new operator. `fn new` cannot be `async`.
 
 The words a script can define are `fn`, `class`, and the built-ins on this page. `examples/check.magic` exercises most of them in one file.

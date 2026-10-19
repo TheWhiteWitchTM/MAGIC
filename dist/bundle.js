@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { Compiler } from './compiler.js';
 import { MODULES, isMagicSpecifier, isRelativeJsSpecifier, moduleBySpecifier, moduleNs, moduleOrder, } from './modules.js';
 import { MagicError } from './error.js';
-import { commonDir, loadGraph, moduleFile, resolveMagicFile } from './graph.js';
+import { commonDir, expandUses, loadGraph, moduleFile, resolveMagicFile } from './graph.js';
 import { classifyJs, resolveJsFile, toNamespaceIife } from './jsmod.js';
 import { preludeInlineSource } from './std.js';
 /**
@@ -14,6 +14,9 @@ import { preludeInlineSource } from './std.js';
 export function bundle(entry, options = {}) {
     const target = options.target ?? 'module';
     const loaded = loadGraph(entry);
+    const byPath = new Map(loaded.map((mod) => [mod.absPath, mod.program]));
+    for (const mod of loaded)
+        expandUses(mod.program, mod.absPath, byPath);
     const ids = new Map();
     loaded.forEach((mod, index) => {
         ids.set(mod.absPath, `__mod_${index}`);
@@ -104,6 +107,8 @@ export function bundle(entry, options = {}) {
     }
     const open = target === 'script' ? `${needsAsync ? 'async ' : ''}(() => {` : '';
     lines.push(open);
+    if (target === 'script')
+        lines.push("'use strict';");
     lines.push(preludeInlineSource().trimEnd());
     if (target === 'script') {
         for (const name of moduleOrder()) {

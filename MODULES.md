@@ -1,6 +1,13 @@
 # Modules
 
-A module annotation loads one of these for the whole file. `import` loads the same module and lets you pick the names. The export lists here match [lang/magic.language.json](lang/magic.language.json) and the compiler.
+A module annotation loads one of these for the whole file. `use "canvas"` is the same load. `use "./words"` loads a file you wrote. `import` loads the same module and lets you pick the names. The export lists here match [lang/magic.language.json](lang/magic.language.json) and the compiler.
+
+A `.magic` file is a module. Top-level `fn`, `class`, and `let` are the exports. No export line is required.
+
+```
+use "./words"
+print greet("Ada")
+```
 
 Canvas and terminal used to be one import called `2d`. They are two modules now. `@2d` still means both, when a script wants the whole emoji-engine-2d package.
 
@@ -82,8 +89,8 @@ Constructing a 3D engine needs WebGL. Importing the class does not.
 These are widgets on a terminal surface. `@ui as kit` is the comfortable form, because the list is long.
 
 ```
-import Terminal from "terminal"
-import Application, Window, Label, Button from "ui"
+@terminal
+@ui
 
 let term = new Terminal({ cols: 40, rows: 12, showCursor: false })
 let app = new Application(term, { sound: false })

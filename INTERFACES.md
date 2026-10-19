@@ -10,7 +10,9 @@ A script is UTF-8 text in a `.magic` file. Keywords ignore case. Identifiers kee
 
 `canvas`, `terminal`, `2d`, `3d`, `ui`, `sound`, `hex`, `games`.
 
-`@canvas` imports every export of that module. `@sound as audio` imports the namespace. A module annotation inside a function throws `a module annotation belongs at the top of the script`. `@canvas()` throws `a module annotation does not take arguments`. Two modules that export the same name throw `comes from both`. A named import of a missing export throws `canvas has no Terminal`, and names the modules that do export it.
+`@canvas` imports every export of that module. `@sound as audio` imports the namespace. `use "canvas"` is that same import. `use "./words"` brings in the top-level exports of a Magic file when `magic run` or `magic compile` can read it. `use "./helpers.js" as helpers` is the namespace form for JavaScript. A module annotation inside a function throws `a module annotation belongs at the top of the script`. `use` in the same place throws `use belongs at the top of the script`. `@canvas()` throws `a module annotation does not take arguments`. Two modules that export the same name throw `comes from both`. A named import of a missing export throws `canvas has no Terminal`, and names the modules that do export it.
+
+A local belongs to the block that created it: each `if` arm, `else`, loop body, `try`, `catch`, `finally`, function, and the top of the file. The binding ends with the block unless a nested function escaped with it. A `for` counter and a `catch` name do not survive the block. Templates are `$"..."`, `$'...'`, and `$"""..."""`, compiled through `__magic_fill`. `"""` is a multiline string. Constant folding runs at emit. A dead `if` arm is still typechecked.
 
 `@strict` and `@normal` are unchanged. `@2d` and `@3d` are module names. The lexer splits the digit from the letter, and the parser joins them back.
 

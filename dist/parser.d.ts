@@ -13,6 +13,8 @@ export declare class Parser {
     private statements;
     private statement;
     private importStmt;
+    /** `use "canvas"` and `use "./words"`. `as` keeps the module under one name. */
+    private useStmt;
     private fnStmt;
     private classStmt;
     private method;
@@ -77,4 +79,7 @@ export declare class Parser {
     private parseType;
     private accessWord;
     private mergeAccess;
+    private templateExpr;
+    /** One expression, used for the holes in a template. */
+    private static expression;
 }

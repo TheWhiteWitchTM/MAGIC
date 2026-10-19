@@ -12,10 +12,22 @@ export declare class Lexer {
     private line;
     private column;
     private atLineStart;
-    constructor(source: string, filename?: string);
+    constructor(source: string, filename?: string, line?: number, column?: number);
     tokenize(): Token[];
     private one;
     private string;
+    /** `"""` may span lines. A newline right after the opening quotes is dropped. */
+    private longString;
+    /**
+     * `$"..."` and `$"""..."""`. `{expr}` is a hole. `{{` and `}}` are braces.
+     * The parser reads each hole as an expression.
+     */
+    private template;
+    private hole;
+    /** Skip a string inside an interpolation so its braces stay part of the text. */
+    private skipQuoted;
+    private atTriple;
+    private dropLeadingBreak;
     private escape;
     private unicode;
     private number;

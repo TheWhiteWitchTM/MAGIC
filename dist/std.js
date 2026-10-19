@@ -14,6 +14,12 @@ function __magic_cat(a, b) {
   return __magic_text(a) + __magic_text(b);
 }
 
+function __magic_fill() {
+  let out = '';
+  for (let i = 0; i < arguments.length; i += 1) out += __magic_text(arguments[i]);
+  return out;
+}
+
 function __magic_len(value) {
   if (value === null || value === undefined) return 0;
   if (typeof value === 'string') return Array.from(value).length;
@@ -177,6 +183,7 @@ export const PRELUDE_EXPORTS = [
     '__magic_pop',
     '__magic_time',
     '__magic_cat',
+    '__magic_fill',
     '__magic_iter',
     '__magic_inits',
     '__magic_super',

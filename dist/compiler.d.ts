@@ -93,8 +93,14 @@ export declare class Compiler {
     private emitStmt;
     private emitTry;
     private emitIf;
+    /** A constant-true arm, or an else, is the last piece and has a null test. */
+    private emitIfChain;
+    private emitWhile;
+    private emitRepeat;
     private emitFor;
-    private emitLoop;
+    /** Locals of this block are declared here, not on the function, so they die with the block. */
+    private emitScopeBody;
+    private emitBraced;
     private emitAssign;
     private emitFn;
     private emitClass;
@@ -123,6 +129,7 @@ export declare class Compiler {
     private lookup;
     private lookupFrom;
     private child;
+    private blockScope;
     private needScope;
     private saveFlags;
     private restoreFlags;

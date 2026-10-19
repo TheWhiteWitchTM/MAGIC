@@ -23,7 +23,7 @@ The words `print` and `len` live in `src/std.ts` as plain JavaScript text. The s
 
 Lexer, Parser, and Compiler do not import Runtime or App. The browser entry, `src/browser.ts`, exports the compiler and stops there, so a page can compile a script without a file system. The checker in `src/check.ts` is part of the compiler. It runs when a file is `@strict`.
 
-`src/lower.ts` runs at the end of the parse. A module annotation becomes an import statement. After that, the compiler has one way to load a module.
+`src/lower.ts` runs at the end of the parse. A module annotation becomes an import statement. `use "canvas"` takes that same path. `use "./words"` is expanded once the file graph is known. After that, the compiler has one way to load a module. `src/optimize.ts` folds constants while the compiler emits JavaScript.
 
 ## Modules
 

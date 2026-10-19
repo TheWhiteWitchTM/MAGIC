@@ -9,6 +9,11 @@ export interface LoadedModule {
  * The result is in dependency order: a file comes after the files it imports.
  */
 export declare function loadGraph(entry: string, sources?: ReadonlyMap<string, string>): LoadedModule[];
+/**
+ * `use "./words"` brings in every top-level name that file exports.
+ * Standard modules are already expanded. JavaScript files need `as`.
+ */
+export declare function expandUses(program: Program, fromFile: string, modules: ReadonlyMap<string, Program>): void;
 export { resolveJsFile } from './jsmod.js';
 /** `./witch` and `./witch.magic` both name a Magic file next to `fromFile`. */
 export declare function resolveMagicFile(fromFile: string, specifier: string): string;

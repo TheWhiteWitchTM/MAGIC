@@ -12,7 +12,7 @@ import {
   type ModuleName,
 } from './modules.js';
 import { MagicError } from './error.js';
-import { commonDir, loadGraph, moduleFile, resolveMagicFile, type LoadedModule } from './graph.js';
+import { commonDir, expandUses, loadGraph, moduleFile, resolveMagicFile, type LoadedModule } from './graph.js';
 import { classifyJs, resolveJsFile, toNamespaceIife } from './jsmod.js';
 import { preludeInlineSource } from './std.js';
 
@@ -53,6 +53,8 @@ interface ExternalMod {
 export function bundle(entry: string, options: BundleOptions = {}): BundleResult {
   const target = options.target ?? 'module';
   const loaded = loadGraph(entry);
+  const byPath = new Map(loaded.map((mod) => [mod.absPath, mod.program]));
+  for (const mod of loaded) expandUses(mod.program, mod.absPath, byPath);
   const ids = new Map<string, string>();
   loaded.forEach((mod, index) => {
     ids.set(mod.absPath, `__mod_${index}`);
@@ -141,6 +143,7 @@ export function bundle(entry: string, options: BundleOptions = {}): BundleResult
   }
   const open = target === 'script' ? `${needsAsync ? 'async ' : ''}(() => {` : '';
   lines.push(open);
+  if (target === 'script') lines.push("'use strict';");
   lines.push(preludeInlineSource().trimEnd());
   if (target === 'script') {
     for (const name of moduleOrder()) {

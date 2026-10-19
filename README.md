@@ -85,13 +85,13 @@ npm run pack
 
 Canvas and terminal are the two halves of what used to be one `2d` import. `@2d` still loads both when a script wants the whole set. `@canvas` and `@terminal` both export `Utilities`, so use `@terminal as term` when you load both.
 
-`import Engine from "canvas"` is the same module, with the names you pick. The details are in [MODULES.md](MODULES.md).
+`use "canvas"` is the same load as `@canvas`. `use "./words"` loads a `.magic` file you wrote: every top-level `fn`, `class`, and `let` is an export. `import Engine from "canvas"` picks names. The details are in [MODULES.md](MODULES.md).
 
 ## Language
 
 [LANGUAGE.md](LANGUAGE.md) is every form and every rule. This is the shape.
 
-Keywords ignore case. Names keep their case. A newline ends a statement. `end` closes `if`, `while`, `for`, `repeat`, `fn`, `class`, and `try`. `then` and `do` are optional. `--` comments out the rest of the line. `nil`, `false`, `0`, and `""` are false. `=` assigns. `==` compares. Indexes start at 0. `for i = 1 to 3` visits 1, 2, and 3.
+Keywords ignore case. Names keep their case. A newline ends a statement. `end` closes `if`, `while`, `for`, `repeat`, `fn`, `class`, and `try`. A local lives in the block that created it and can be collected when that block ends. `then` and `do` are optional. `--` comments out the rest of the line. `nil`, `false`, `0`, and `""` are false. `=` assigns. `==` compares. Indexes start at 0. `for i = 1 to 3` visits 1, 2, and 3, and `i` does not exist after the loop. `$"Hello, {name}!"` fills text. `"""` spans lines.
 
 ```
 fn greet(name)

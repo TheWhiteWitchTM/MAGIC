@@ -1,5 +1,5 @@
 import { MagicError } from './error.js';
-import { MODULES, moduleKey } from './modules.js';
+import { MODULES, moduleBySpecifier, moduleKey } from './modules.js';
 /**
  * `@canvas` and `@sound as audio` become imports.
  * The rest of the compiler then sees an ordinary module import.
@@ -104,7 +104,38 @@ export function lowerModules(program) {
     }
     if (loads.length > 0)
         program.body = [...loads, ...program.body];
+    expandStandardUses(program, claim);
     return program;
+}
+/** `use "canvas"` becomes a named import of every export. A file `use` stays a star. */
+function expandStandardUses(program, claim) {
+    program.body = program.body.filter((stmt) => {
+        if (stmt.kind !== 'import' || stmt.form !== 'star')
+            return true;
+        const info = moduleBySpecifier(stmt.specifier);
+        if (!info)
+            return true;
+        const ann = {
+            name: info.name,
+            args: [],
+            called: false,
+            alias: null,
+            line: stmt.line,
+            column: stmt.column,
+        };
+        const names = [];
+        for (const imported of info.exports) {
+            if (!claim(imported, info.name, ann, info.name))
+                continue;
+            names.push({ imported, local: imported });
+        }
+        if (names.length === 0)
+            return false;
+        stmt.form = 'named';
+        stmt.names = names;
+        stmt.specifier = info.name;
+        return true;
+    });
 }
 function labelModule(label) {
     const bare = label.startsWith('@') ? label.slice(1) : label;
@@ -240,6 +271,12 @@ function walkExpr(expr, visit) {
         case 'super':
             for (const arg of expr.args)
                 walkExpr(arg, visit);
+            return;
+        case 'template':
+            for (const part of expr.parts) {
+                if ('expr' in part)
+                    walkExpr(part.expr, visit);
+            }
             return;
         default:
             return;

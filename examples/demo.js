@@ -114,6 +114,84 @@ print Box().read()
 expectLines(runSnippet('print nil or "bee"\n'), ['bee'], 'or');
 
 expectLines(runSnippet(`
+let n = 1
+if true then
+  let n = 2
+  print n
+end
+print n
+`), ['2', '1'], 'block shadow');
+
+expectLines(runSnippet(`
+let i = 9
+for i = 1 to 2
+  print i
+end
+print i
+`), ['1', '2', '9'], 'loop counter stays in the loop');
+
+expectLines(runSnippet(`
+if true then
+  let secret = "x"
+end
+print type(secret)
+`), ['nil'], 'block local dies');
+
+expectLines(runSnippet(`
+fn go()
+  let hold = fn()
+    return secret
+  end
+  if true then
+    let secret = "x"
+  end
+  return type(hold())
+end
+print go()
+`), ['nil'], 'closure does not capture an inner block');
+
+expectLines(runSnippet(`
+fn go()
+  if true then
+    let secret = "in"
+    let hold = fn()
+      return secret
+    end
+    return hold()
+  end
+  return "out"
+end
+print go()
+`), ['in'], 'closure keeps a captured block local');
+
+expectLines(runSnippet(`
+let kept = ""
+try
+  throw "x"
+catch err
+  kept = err.message
+end
+print kept
+print type(err)
+`), ['x', 'nil'], 'catch does not leak');
+
+expectLines(runSnippet('print """ab\ncd"""\n'), ['ab\ncd'], 'multiline string');
+expectLines(runSnippet('let name = "Ada"\nprint $"Hello, {name}!"\n'), ['Hello, Ada!'], 'template');
+expectLines(runSnippet('print $"{{ok}}"\n'), ['{ok}'], 'template braces');
+expectLines(runSnippet('print $"{1 + 2}"\n'), ['3'], 'template expression');
+
+const folded = compile('print 2 * 5\nprint false and 1\n', { filename: 'fold.magic', target: 'script' });
+if (!folded.code.includes('__magic_print(10)')) fail(`fold\n${folded.code}`);
+if (!folded.code.includes('__magic_print(false)')) fail(`and fold\n${folded.code}`);
+const dead = compile('fn go()\n  if false then\n    let secret = "x"\n  end\nend\n', { filename: 'dead.magic', target: 'script' });
+if (dead.code.includes('secret')) fail(`dead local stayed in the function\n${dead.code}`);
+
+expectLines(await captureSource(`
+use "./words"
+print greet("witch")
+`, path.join(examples, 'use-words.magic')), ['Hello, witch'], 'use a magic file');
+
+expectLines(runSnippet(`
 try
   throw "boom"
 catch err
@@ -194,6 +272,9 @@ mustThrow('if a = b then\nend\n', 'use == to compare');
 mustThrow('break\n', 'break belongs inside');
 mustThrow('print self\n', 'self belongs inside a class');
 mustThrow('print "hi', 'this string never ends');
+mustThrow('print $"hi {', 'this interpolation never ends');
+mustThrow('print $"{}"\n', 'this interpolation is empty');
+mustThrow('fn go()\n  use "./words"\nend\n', 'use belongs at the top');
 mustThrow('import greet from "./words.magic"\n', 'this script imports another Magic file', { target: 'script' });
 mustThrow('import shout from "./helpers.js"\n', 'this script imports a JavaScript file', { target: 'script' });
 mustThrow('try\nprint 1\nend\n', 'try needs catch or finally');

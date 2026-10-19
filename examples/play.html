@@ -14,7 +14,7 @@
   <p>Arrow keys steer the spark. The comet keeps drifting.</p>
   <pre id="magic-status">loading</pre>
   <script type="text/magic" id="game">
-import Engine, Utilities from "canvas"
+@canvas
 
 let engine = new Engine({ width: 480, height: 270 })
 let ui = Utilities.wrap(engine.canvas, { title: "Drift" })

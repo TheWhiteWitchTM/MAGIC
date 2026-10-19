@@ -1,5 +1,6 @@
 import { checkProgram, fileIsStrict } from './check.js';
 import { MagicError } from './error.js';
+import { constantTruth, foldExpr } from './optimize.js';
 import { missingExport, moduleBySpecifier, moduleNs, isJsSpecifier, isMagicSpecifier, } from './modules.js';
 import { Parser } from './parser.js';
 import { BUILTIN_JS, BUILTIN_NAMES, PRELUDE_EXPORTS, preludeInlineSource } from './std.js';
@@ -74,6 +75,7 @@ export class Compiler {
         const asyncMain = this.hasTopAwait(program.body);
         this.w.line(`globalThis.__magic_module = (${asyncMain ? 'async ' : ''}() => {`);
         this.w.push();
+        this.w.line("'use strict';");
         for (const line of preludeInlineSource().split('\n'))
             this.w.line(line);
         for (const line of this.guards)
@@ -177,9 +179,9 @@ export class Compiler {
         if (!this.esm)
             this.w.line(`return { ${this.exportNames().join(', ')} };`);
     }
-    emitHoist(scope) {
+    emitHoist(scope, skip) {
         for (const [name, kind] of scope.names) {
-            if (kind !== 'let')
+            if (kind !== 'let' || skip?.has(name))
                 continue;
             if (this.esm && scope.kind === 'module')
                 this.w.line(`export let ${name};`);
@@ -245,18 +247,10 @@ export class Compiler {
                 this.emitIf(stmt);
                 return;
             case 'while':
-                this.w.line(`while (${this.expr(stmt.test)}) {`);
-                this.w.push();
-                this.emitLoop(stmt.body);
-                this.w.pop();
-                this.w.line('}');
+                this.emitWhile(stmt);
                 return;
             case 'repeat':
-                this.w.line('do {');
-                this.w.push();
-                this.emitLoop(stmt.body);
-                this.w.pop();
-                this.w.line(`} while (!(${this.expr(stmt.test)}));`);
+                this.emitRepeat(stmt);
                 return;
             case 'for':
                 this.emitFor(stmt);
@@ -268,82 +262,145 @@ export class Compiler {
     emitTry(stmt) {
         this.w.line('try {');
         this.w.push();
-        for (const inner of stmt.body)
-            this.emitStmt(inner);
+        this.emitScopeBody(stmt.body, stmt);
         this.w.pop();
         if (stmt.catchBody) {
-            if (stmt.catchName) {
-                this.w.line('} catch (__magic_e) {');
-                this.w.push();
-                this.w.line(`${stmt.catchName} = __magic_e;`);
-                for (const inner of stmt.catchBody)
-                    this.emitStmt(inner);
-                this.w.pop();
-            }
-            else {
-                this.w.line('} catch {');
-                this.w.push();
-                for (const inner of stmt.catchBody)
-                    this.emitStmt(inner);
-                this.w.pop();
-            }
+            const skip = stmt.catchName ? new Set([stmt.catchName]) : undefined;
+            this.w.line(stmt.catchName ? `} catch (${stmt.catchName}) {` : '} catch {');
+            this.w.push();
+            this.emitScopeBody(stmt.catchBody, stmt.catchBody, false, skip);
+            this.w.pop();
         }
         if (stmt.finallyBody) {
             this.w.line('} finally {');
             this.w.push();
-            for (const inner of stmt.finallyBody)
-                this.emitStmt(inner);
+            this.emitScopeBody(stmt.finallyBody, stmt.finallyBody);
             this.w.pop();
         }
         this.w.line('}');
     }
     emitIf(stmt) {
-        stmt.arms.forEach((arm, index) => {
+        const live = [];
+        for (const arm of stmt.arms) {
+            const folded = foldExpr(arm.test);
+            const known = constantTruth(folded);
+            if (known === false)
+                continue;
+            if (known === true) {
+                live.push({ test: null, body: arm.body, key: arm });
+                this.emitIfChain(live);
+                return;
+            }
+            live.push({ test: folded, body: arm.body, key: arm });
+        }
+        if (stmt.elseBody)
+            live.push({ test: null, body: stmt.elseBody, key: stmt.elseBody });
+        this.emitIfChain(live);
+    }
+    /** A constant-true arm, or an else, is the last piece and has a null test. */
+    emitIfChain(live) {
+        let tail = null;
+        if (live.length > 0 && live[live.length - 1].test === null) {
+            const last = live.pop();
+            tail = { body: last.body, key: last.key };
+        }
+        if (live.length === 0) {
+            if (tail)
+                this.emitBraced(tail.body, tail.key);
+            return;
+        }
+        live.forEach((arm, index) => {
             this.w.line(`${index === 0 ? 'if' : '} else if'} (${this.expr(arm.test)}) {`);
             this.w.push();
-            for (const inner of arm.body)
-                this.emitStmt(inner);
+            this.emitScopeBody(arm.body, arm.key);
             this.w.pop();
         });
-        if (stmt.elseBody) {
+        if (tail) {
             this.w.line('} else {');
             this.w.push();
-            for (const inner of stmt.elseBody)
-                this.emitStmt(inner);
+            this.emitScopeBody(tail.body, tail.key);
             this.w.pop();
         }
         this.w.line('}');
+    }
+    emitWhile(stmt) {
+        const folded = foldExpr(stmt.test);
+        const known = constantTruth(folded);
+        if (known === false)
+            return;
+        this.w.line(`while (${known === true ? 'true' : this.expr(folded)}) {`);
+        this.w.push();
+        this.emitScopeBody(stmt.body, stmt, true);
+        this.w.pop();
+        this.w.line('}');
+    }
+    emitRepeat(stmt) {
+        const folded = foldExpr(stmt.test);
+        const known = constantTruth(folded);
+        if (known === true) {
+            this.emitBraced(stmt.body, stmt, true);
+            return;
+        }
+        this.w.line('do {');
+        this.w.push();
+        this.emitScopeBody(stmt.body, stmt, true);
+        this.w.pop();
+        this.w.line(`} while (!(${known === false ? 'false' : this.expr(folded)}));`);
     }
     emitFor(stmt) {
         if (stmt.iter) {
             const item = this.temp();
             this.w.line(`for (const ${item} of __magic_iter(${this.expr(stmt.iter)})) {`);
             this.w.push();
+            const saved = this.scope;
+            const savedLoop = this.loop;
+            this.scope = this.needScope(stmt, 'for');
+            this.loop += 1;
+            this.emitHoist(this.scope);
             this.w.line(`${stmt.name} = ${item};`);
-            this.emitLoop(stmt.body);
+            for (const inner of stmt.body)
+                this.emitStmt(inner);
+            this.loop = savedLoop;
+            this.scope = saved;
             this.w.pop();
             this.w.line('}');
             return;
         }
+        const from = this.temp();
         const to = this.temp();
         const step = this.temp();
         this.w.line('{');
         this.w.push();
+        this.w.line(`const ${from} = ${this.expr(stmt.from)};`);
         this.w.line(`const ${to} = ${this.expr(stmt.to)};`);
         this.w.line(`const ${step} = ${stmt.step ? this.expr(stmt.step) : '1'};`);
-        this.w.line(`for (${stmt.name} = ${this.expr(stmt.from)}; ${step} >= 0 ? ${stmt.name} <= ${to} : ${stmt.name} >= ${to}; ${stmt.name} = ${stmt.name} + ${step}) {`);
+        this.w.line(`for (let ${stmt.name} = ${from}; ${step} >= 0 ? ${stmt.name} <= ${to} : ${stmt.name} >= ${to}; ${stmt.name} = ${stmt.name} + ${step}) {`);
         this.w.push();
-        this.emitLoop(stmt.body);
+        this.emitScopeBody(stmt.body, stmt, true, new Set([stmt.name]));
         this.w.pop();
         this.w.line('}');
         this.w.pop();
         this.w.line('}');
     }
-    emitLoop(body) {
-        this.loop += 1;
+    /** Locals of this block are declared here, not on the function, so they die with the block. */
+    emitScopeBody(body, key, loop = false, skip) {
+        const saved = this.scope;
+        const savedLoop = this.loop;
+        this.scope = this.needScope(key, 'block');
+        if (loop)
+            this.loop += 1;
+        this.emitHoist(this.scope, skip);
         for (const stmt of body)
             this.emitStmt(stmt);
-        this.loop -= 1;
+        this.loop = savedLoop;
+        this.scope = saved;
+    }
+    emitBraced(body, key, loop = false) {
+        this.w.line('{');
+        this.w.push();
+        this.emitScopeBody(body, key, loop);
+        this.w.pop();
+        this.w.line('}');
     }
     emitAssign(stmt) {
         const math = stmt.op === '=' ? null : stmt.op[0];
@@ -495,12 +552,19 @@ export class Compiler {
         this.w = savedWriter;
         return `(${sub.text().trim()})`;
     }
-    expr(expr) {
+    expr(node) {
+        const expr = foldExpr(node);
         switch (expr.kind) {
             case 'number':
                 return expr.raw;
             case 'string':
                 return JSON.stringify(expr.value);
+            case 'template': {
+                const args = expr.parts.map((part) => ('text' in part ? JSON.stringify(part.text) : this.expr(part.expr)));
+                if (args.length === 1 && expr.parts[0] && 'text' in expr.parts[0])
+                    return args[0];
+                return `__magic_fill(${args.join(', ')})`;
+            }
             case 'bool':
                 return expr.value ? 'true' : 'false';
             case 'nil':
@@ -618,8 +682,13 @@ export class Compiler {
     scanStmt(stmt, scope) {
         switch (stmt.kind) {
             case 'import':
-                if (scope.kind !== 'module')
-                    this.oops(stmt, 'import belongs at the top of the script');
+                if (scope.kind !== 'module') {
+                    const word = stmt.via === 'use' ? 'use' : 'import';
+                    this.oops(stmt, `${word} belongs at the top of the script`);
+                }
+                if (stmt.form === 'star') {
+                    this.oops(stmt, `cannot see the exports of ${JSON.stringify(stmt.specifier)} from here. Write use ${JSON.stringify(stmt.specifier)} as name`);
+                }
                 if (stmt.form === 'namespace' && stmt.alias)
                     this.declare(scope, stmt.alias, 'import', stmt);
                 for (const name of stmt.names)
@@ -635,29 +704,6 @@ export class Compiler {
                 return;
             case 'let':
                 this.declare(scope, stmt.name, 'let', stmt);
-                return;
-            case 'for':
-                this.declare(scope, stmt.name, 'let', stmt, true);
-                this.scanSurface(stmt.body, scope);
-                return;
-            case 'if':
-                for (const arm of stmt.arms)
-                    this.scanSurface(arm.body, scope);
-                if (stmt.elseBody)
-                    this.scanSurface(stmt.elseBody, scope);
-                return;
-            case 'while':
-            case 'repeat':
-                this.scanSurface(stmt.body, scope);
-                return;
-            case 'try':
-                this.scanSurface(stmt.body, scope);
-                if (stmt.catchName)
-                    this.declare(scope, stmt.catchName, 'let', stmt, true);
-                if (stmt.catchBody)
-                    this.scanSurface(stmt.catchBody, scope);
-                if (stmt.finallyBody)
-                    this.scanSurface(stmt.finallyBody, scope);
                 return;
             case 'assign':
                 this.scanAssign(stmt, scope);
@@ -701,17 +747,17 @@ export class Compiler {
             case 'if':
                 for (const arm of stmt.arms) {
                     this.nestExpr(arm.test, scope);
-                    this.scanNested(arm.body, scope);
+                    this.analyzeBody(arm.body, this.blockScope(scope), arm);
                 }
                 if (stmt.elseBody)
-                    this.scanNested(stmt.elseBody, scope);
+                    this.analyzeBody(stmt.elseBody, this.blockScope(scope), stmt.elseBody);
                 return;
             case 'while':
                 this.nestExpr(stmt.test, scope);
-                this.scanNested(stmt.body, scope);
+                this.analyzeBody(stmt.body, this.blockScope(scope), stmt);
                 return;
             case 'repeat':
-                this.scanNested(stmt.body, scope);
+                this.analyzeBody(stmt.body, this.blockScope(scope), stmt);
                 this.nestExpr(stmt.test, scope);
                 return;
             case 'for':
@@ -719,7 +765,11 @@ export class Compiler {
                 this.nestExpr(stmt.to, scope);
                 this.nestExpr(stmt.step, scope);
                 this.nestExpr(stmt.iter, scope);
-                this.scanNested(stmt.body, scope);
+                {
+                    const child = this.blockScope(scope);
+                    this.declare(child, stmt.name, 'let', stmt);
+                    this.analyzeBody(stmt.body, child, stmt);
+                }
                 return;
             case 'let':
                 this.nestExpr(stmt.init, scope);
@@ -742,11 +792,15 @@ export class Compiler {
                 this.nestExpr(stmt.value, scope);
                 return;
             case 'try':
-                this.scanNested(stmt.body, scope);
-                if (stmt.catchBody)
-                    this.scanNested(stmt.catchBody, scope);
+                this.analyzeBody(stmt.body, this.blockScope(scope), stmt);
+                if (stmt.catchBody) {
+                    const child = this.blockScope(scope);
+                    if (stmt.catchName)
+                        this.declare(child, stmt.catchName, 'let', stmt);
+                    this.analyzeBody(stmt.catchBody, child, stmt.catchBody);
+                }
                 if (stmt.finallyBody)
-                    this.scanNested(stmt.finallyBody, scope);
+                    this.analyzeBody(stmt.finallyBody, this.blockScope(scope), stmt.finallyBody);
                 return;
             default:
                 return;
@@ -800,17 +854,19 @@ export class Compiler {
             case 'await':
                 this.nestExpr(expr.expr, scope);
                 return;
+            case 'template':
+                for (const part of expr.parts) {
+                    if ('expr' in part)
+                        this.nestExpr(part.expr, scope);
+                }
+                return;
             default:
                 return;
         }
     }
-    declare(scope, name, kind, node, reuse = false) {
-        const existing = scope.names.get(name);
-        if (existing) {
-            if (reuse && (existing === 'let' || existing === 'param'))
-                return;
+    declare(scope, name, kind, node) {
+        if (scope.names.has(name))
             this.oops(node, `${name} is already declared`);
-        }
         scope.names.set(name, kind);
     }
     lookup(name) {
@@ -828,6 +884,9 @@ export class Compiler {
     }
     child(parent, kind) {
         return { kind, names: new Map(), parent };
+    }
+    blockScope(parent) {
+        return { kind: 'block', names: new Map(), parent };
     }
     needScope(key, label) {
         const scope = this.scopes.get(key);
@@ -923,6 +982,8 @@ export class Compiler {
                 return expr.fields.some((field) => this.exprHasTopAwait(field.value));
             case 'super':
                 return expr.args.some((arg) => this.exprHasTopAwait(arg));
+            case 'template':
+                return expr.parts.some((part) => 'expr' in part && this.exprHasTopAwait(part.expr));
             default:
                 return false;
         }

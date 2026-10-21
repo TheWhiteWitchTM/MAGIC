@@ -3,17 +3,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { App } from './app.js';
 import { bundle } from './bundle.js';
+import { parseTypeMode } from './check.js';
 import { MagicError } from './error.js';
 import { Runtime } from './runtime.js';
 import { startServer } from './serve.js';
 const HELP = `MAGIC compiles a small language to JavaScript.
 
-  magic run <file> [--strict]
-  magic compile <file> [-o out.js] [--strict]
+  magic run <file> [--types none|lazy|basic|strict]
+  magic compile <file> [-o out.js] [--types none|lazy|basic|strict]
   magic app <file> [-o dir] [--title text] [--name slug] [--width n] [--height n]
   magic pack <file> [-o dir] [--title text] [--build]
   magic serve [--port n]
   magic help
+
+  --types none looks away. lazy checks a type where you wrote it.
+  basic checks that type when the name is used. strict also checks private.
+  --strict is --types strict. A file annotation wins over the flag.
+  Untyped names stay free in every mode.
 
   magic app writes an Electron project. npm start opens it.
   magic pack is the same project. npm run pack builds a standalone app.
@@ -31,13 +37,14 @@ async function main() {
     }
     const parsed = parseArgs(argv.slice(1));
     if (cmd === 'run') {
-        const runtime = new Runtime({ strict: parsed.flags['--strict'] === 'true' });
+        const runtime = new Runtime({ types: typeFlag(parsed.flags), strict: parsed.flags['--strict'] === 'true' });
         await runtime.runFile(needFile(parsed.file));
         return;
     }
     if (cmd === 'compile') {
         const result = bundle(path.resolve(needFile(parsed.file)), {
             target: 'module',
+            types: typeFlag(parsed.flags),
             strict: parsed.flags['--strict'] === 'true',
         });
         const out = parsed.flags['-o'];
@@ -81,6 +88,16 @@ function parseArgs(argv) {
                 flags[arg] = 'true';
                 continue;
             }
+            if (arg === '--types') {
+                const value = argv[i + 1];
+                if (!value || value.startsWith('-'))
+                    throw new MagicError('--types needs none, lazy, basic, or strict');
+                if (!parseTypeMode(value))
+                    throw new MagicError('--types needs none, lazy, basic, or strict');
+                flags[arg] = value;
+                i += 1;
+                continue;
+            }
             const value = argv[i + 1];
             if (!value || value.startsWith('-'))
                 throw new MagicError(`${arg} needs a value`);
@@ -97,6 +114,12 @@ function needFile(file) {
     if (!file)
         throw new MagicError('give Magic a script, for example magic run game.magic');
     return file;
+}
+function typeFlag(flags) {
+    const value = flags['--types'];
+    if (!value)
+        return undefined;
+    return parseTypeMode(value) ?? undefined;
 }
 function numberFlag(value, label) {
     if (value === undefined)

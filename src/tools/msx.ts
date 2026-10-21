@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
+import { parseTypeMode, type TypeMode } from '../check.js';
 import { MagicError } from '../error.js';
 import { Parser } from '../parser.js';
 import { Runtime } from '../runtime.js';
@@ -16,12 +17,15 @@ const pkg = require('../../package.json') as { version: string };
 const HELP = `msx runs Magic files, the way tsx runs TypeScript.
 
   msx file.magic [args...]
+  msx --types lazy file.magic
   msx --strict file.magic
   msx --watch file.magic
   msx -e "print 1"
   msx
 
 No file opens a REPL. Arguments after the script are process.argv for that script.
+--types is none, lazy, basic, or strict. --strict is --types strict.
+A file annotation wins. Untyped names stay free.
 `;
 
 interface Options {
@@ -29,6 +33,7 @@ interface Options {
   version: boolean;
   watch: boolean;
   strict: boolean;
+  types: TypeMode | undefined;
   evalCode: string | null;
   file: string | null;
   scriptArgs: string[];
@@ -45,22 +50,22 @@ async function main(): Promise<void> {
     return;
   }
   if (options.evalCode !== null) {
-    const runtime = new Runtime({ strict: options.strict });
+    const runtime = new Runtime({ types: options.types, strict: options.strict });
     await runtime.run(options.evalCode, 'eval.magic');
     return;
   }
   if (!options.file) {
-    await repl(options.strict);
+    await repl(options.strict, options.types);
     return;
   }
   const file = path.resolve(options.file);
   if (!fs.existsSync(file)) throw new MagicError(`cannot find ${options.file}`);
   process.argv = [process.execPath, file, ...options.scriptArgs];
   if (options.watch) {
-    await watch(file, options.strict);
+    await watch(file, options.strict, options.types);
     return;
   }
-  await runFile(file, options.strict);
+  await runFile(file, options.strict, options.types);
 }
 
 function parse(argv: string[]): Options {
@@ -69,6 +74,7 @@ function parse(argv: string[]): Options {
     version: false,
     watch: false,
     strict: false,
+    types: undefined,
     evalCode: null,
     file: null,
     scriptArgs: [],
@@ -96,6 +102,14 @@ function parse(argv: string[]): Options {
       options.strict = true;
       continue;
     }
+    if (arg === '--types') {
+      const value = argv[i + 1];
+      const mode = value ? parseTypeMode(value) : null;
+      if (!mode) throw new MagicError('--types needs none, lazy, basic, or strict');
+      options.types = mode;
+      i += 1;
+      continue;
+    }
     if (arg === '-e' || arg === '--eval') {
       const value = argv[i + 1];
       if (!value) throw new MagicError(`${arg} needs a snippet`);
@@ -113,12 +127,12 @@ function parse(argv: string[]): Options {
   return options;
 }
 
-async function runFile(file: string, strict: boolean): Promise<void> {
-  const runtime = new Runtime({ root: path.dirname(file), strict });
+async function runFile(file: string, strict: boolean, types?: TypeMode): Promise<void> {
+  const runtime = new Runtime({ root: path.dirname(file), strict, types });
   await runtime.runFile(file);
 }
 
-async function watch(file: string, strict: boolean): Promise<void> {
+async function watch(file: string, strict: boolean, types?: TypeMode): Promise<void> {
   let running = false;
   let queued = false;
   const kick = async () => {
@@ -129,7 +143,7 @@ async function watch(file: string, strict: boolean): Promise<void> {
     running = true;
     try {
       process.stdout.write(`msx: ${path.basename(file)}\n`);
-      await runFile(file, strict);
+      await runFile(file, strict, types);
     } catch (error) {
       writeError(error);
     } finally {
@@ -149,7 +163,7 @@ async function watch(file: string, strict: boolean): Promise<void> {
   });
 }
 
-async function repl(strict: boolean): Promise<void> {
+async function repl(strict: boolean, types?: TypeMode): Promise<void> {
   process.stdout.write(`Magic ${pkg.version}  (msx).  .help  .exit\n`);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   let preamble = '';
@@ -160,7 +174,7 @@ async function repl(strict: boolean): Promise<void> {
   };
   const runChunk = async (chunk: string) => {
     const source = preamble ? `${preamble}\n${chunk}` : chunk;
-    const runtime = new Runtime({ strict });
+    const runtime = new Runtime({ strict, types });
     await runtime.run(source, 'repl.magic');
     if (keepsState(chunk)) preamble = preamble ? `${preamble}\n${chunk}` : chunk;
   };

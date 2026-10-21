@@ -12,22 +12,63 @@ import type {
 import { MagicError } from './error.js';
 
 /**
+ * How hard this file is checked.
+ * `none` looks away. `lazy` checks a written type where it is written.
+ * `basic` checks that type again when the name is used.
+ * `strict` does what `basic` does, and it also checks `public`, `private`, and `protected`.
+ * Untyped names stay free in every mode. `nil` still fits. Extra arguments are still ignored.
+ */
+export type TypeMode = 'none' | 'lazy' | 'basic' | 'strict';
+
+const MODE_BY_NAME: Record<string, TypeMode> = {
+  none: 'none',
+  off: 'none',
+  normal: 'none',
+  lazy: 'lazy',
+  basic: 'basic',
+  strict: 'strict',
+};
+
+/** `none`, `lazy`, `basic`, or `strict`. Anything else is null. */
+export function parseTypeMode(value: string): TypeMode | null {
+  const name = value.trim().toLowerCase();
+  if (name === 'none' || name === 'lazy' || name === 'basic' || name === 'strict') return name;
+  return null;
+}
+
+/** File annotation wins. `types` wins over `strict: true`. Otherwise strict means strict, and the default is none. */
+export function fallbackTypeMode(options?: { types?: TypeMode; strict?: boolean }): TypeMode {
+  if (options?.types) return options.types;
+  return options?.strict ? 'strict' : 'none';
+}
+
+/**
+ * The mode this file asked for.
+ * `@none`, `@normal`, and `@off` are none. `@lazy`, `@basic`, and `@strict` name themselves.
+ * A later one wins. `fallback` is the compiler option when the file says nothing.
+ */
+export function fileTypeMode(program: Program, fallback: TypeMode = 'none'): TypeMode {
+  let mode = fallback;
+  for (const ann of fileAnnotations(program)) {
+    const next = MODE_BY_NAME[ann.name];
+    if (next) mode = next;
+  }
+  return mode;
+}
+
+/**
  * True when this file opted into strict mode.
  * `@strict` turns it on. `@normal` turns it off. A later one wins.
  * `fallback` is the compiler option when the file says nothing.
  */
 export function fileIsStrict(program: Program, fallback = false): boolean {
-  let strict = fallback;
-  for (const ann of fileAnnotations(program)) {
-    if (ann.name === 'strict') strict = true;
-    if (ann.name === 'normal') strict = false;
-  }
-  return strict;
+  return fileTypeMode(program, fallback ? 'strict' : 'none') === 'strict';
 }
 
-/** Walk a parsed program and report the traps strict mode is here to catch. */
-export function checkProgram(program: Program, filename: string, strict: boolean): void {
-  new Checker(filename, strict).check(program);
+/** Walk a parsed program. `true` is strict. `false` is none. A mode name is that mode. */
+export function checkProgram(program: Program, filename: string, strictOrMode: boolean | TypeMode = false): void {
+  const mode: TypeMode = typeof strictOrMode === 'string' ? strictOrMode : strictOrMode ? 'strict' : 'none';
+  new Checker(filename, mode).check(program);
 }
 
 interface Type {
@@ -80,16 +121,25 @@ const PRIMITIVE: Record<string, Type> = {
 
 class Checker {
   private readonly filename: string;
-  private readonly strict: boolean;
+  private readonly mode: TypeMode;
   private readonly classes = new Map<string, ClassInfo>();
   private readonly stack: Array<Map<string, Bind>> = [];
   private readonly builtins = new Map<string, Type>();
   private className: string | null = null;
   private returnType: Type | null = null;
 
-  constructor(filename: string, strict: boolean) {
+  constructor(filename: string, mode: TypeMode) {
     this.filename = filename;
-    this.strict = strict;
+    this.mode = mode;
+  }
+
+  /** basic and strict follow a written type to the places it is used. lazy stays on the line that wrote it. */
+  private get checksUses(): boolean {
+    return this.mode === 'basic' || this.mode === 'strict';
+  }
+
+  private get checksAccess(): boolean {
+    return this.mode === 'strict';
   }
 
   check(program: Program): void {
@@ -98,10 +148,8 @@ class Checker {
     this.stack.push(top);
     this.collectClasses(program.body);
     this.declareSurface(program.body, top);
-    if (!this.strict) {
-      this.rejectAccess(program.body);
-      return;
-    }
+    if (this.mode !== 'strict') this.rejectAccess(program.body);
+    if (this.mode === 'none') return;
     this.walkBody(program.body);
   }
 
@@ -278,6 +326,10 @@ class Checker {
 
   private walkAssign(stmt: Extract<Stmt, { kind: 'assign' }>): void {
     const value = this.infer(stmt.value);
+    if (!this.checksUses) {
+      if (stmt.target.kind !== 'name') this.infer(stmt.target);
+      return;
+    }
     if (stmt.target.kind === 'name') {
       const bind = this.lookupBind(stmt.target.name);
       if (bind) {
@@ -367,15 +419,24 @@ class Checker {
     if (expr.callee.kind === 'name') {
       const info = this.classes.get(expr.callee.name);
       if (info) {
-        this.checkArgs(expr, expr.args, info.ctor.params ?? []);
+        if (this.checksUses) this.checkArgs(expr, expr.args, info.ctor.params ?? []);
+        else for (const arg of expr.args) this.infer(arg);
         this.checkCtorAccess(info, expr);
         return { tag: 'class', className: info.name };
       }
       if (this.lookupBind(expr.callee.name)?.declared === this.builtins.get(expr.callee.name)) {
+        if (!this.checksUses) {
+          for (const arg of expr.args) this.infer(arg);
+          return this.builtins.get(expr.callee.name)?.returns ?? ANY;
+        }
         return this.builtinCall(expr.callee.name, expr.args, expr);
       }
     }
     const callee = this.infer(expr.callee);
+    if (!this.checksUses) {
+      for (const arg of expr.args) this.infer(arg);
+      return callee.returns ?? ANY;
+    }
     this.checkCallable(expr, callee);
     this.checkArgs(expr, expr.args, callee.params ?? []);
     return callee.returns ?? ANY;
@@ -385,7 +446,8 @@ class Checker {
     if (callee.kind === 'name') {
       const info = this.classes.get(callee.name);
       if (info) {
-        this.checkArgs(node, args, info.ctor.params ?? []);
+        if (this.checksUses) this.checkArgs(node, args, info.ctor.params ?? []);
+        else for (const arg of args) this.infer(arg);
         this.checkCtorAccess(info, node);
         return { tag: 'class', className: info.name };
       }
@@ -472,6 +534,7 @@ class Checker {
   }
 
   private assertAccess(owner: ClassInfo, name: string, member: Member, node: Node, _writing: boolean): void {
+    if (!this.checksAccess) return;
     if (member.access === 'public') return;
     if (member.access === 'private') {
       if (this.className === owner.name) return;

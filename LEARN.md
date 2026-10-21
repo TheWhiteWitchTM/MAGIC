@@ -1,5 +1,7 @@
 # Learn MAGIC
 
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](LICENSE)
+
 MAGIC is a small language for people who are learning to program and for people who ship games. The rules are in [LANGUAGE.md](LANGUAGE.md). This page is the path through them. Each program is a whole file. Save it as `hello.magic` and run `magic run hello.magic`, or paste it into the playground that `magic serve` opens.
 
 ## Hello
@@ -159,10 +161,10 @@ print int(heard.frequency)
 
 With no speakers, the note is still returned, so the program can be checked. In a browser it also plays.
 
-## Strict, when you want it
+## Types, when you want them
 
 ```
-@strict
+@basic
 
 let hp as number = 3
 
@@ -171,7 +173,7 @@ fn greet(name as string) as string
 end
 ```
 
-`@strict` checks the types you wrote. It does not require them. `public`, `private`, and `protected` belong on a class in a strict file. Leave them off and the class is the same as a normal one.
+Four settings: `@none`, `@lazy`, `@basic`, `@strict`. None looks away. Lazy checks the line that wrote `as`. Basic checks that type when the name is used. Strict does that and also checks `private`. You do not have to write a type. An untyped name stays free. `public`, `private`, and `protected` belong on a class in a strict file.
 
 ## An app
 

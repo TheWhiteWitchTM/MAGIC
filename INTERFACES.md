@@ -1,5 +1,7 @@
 # Public interfaces
 
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](LICENSE)
+
 `src/index.ts` exports these. `npm run build` writes `dist/index.js` and `dist/index.d.ts`. A page loads `browser/magic.js` and gets `compile`, `Compiler`, `Lexer`, `Parser`, and `MagicError` on `Magic` and on `MAGIC`.
 
 [LANGUAGE.md](LANGUAGE.md) is the language. The notes here are the contract the compiler implements.
@@ -14,7 +16,7 @@ A script is UTF-8 text in a `.magic` file. Keywords ignore case. Identifiers kee
 
 A local belongs to the block that created it: each `if` arm, `else`, loop body, `try`, `catch`, `finally`, function, and the top of the file. The binding ends with the block unless a nested function escaped with it. A `for` counter and a `catch` name do not survive the block. Templates are `$"..."`, `$'...'`, and `$"""..."""`, compiled through `__magic_fill`. `"""` is a multiline string. Constant folding runs at emit. A dead `if` arm is still typechecked.
 
-`@strict` and `@normal` are unchanged. `@2d` and `@3d` are module names. The lexer splits the digit from the letter, and the parser joins them back.
+`@none`, `@lazy`, `@basic`, and `@strict` choose the checker. `@normal` and `@off` are `@none`. A later annotation wins. `@strict` still checks written types and access. Untyped names stay free in every mode. `@2d` and `@3d` are module names. The lexer splits the digit from the letter, and the parser joins them back.
 
 `2d` and `emoji-engine-2d` are the whole 2D package. `canvas` and `terminal` are its two halves. `3d` and `emoji-engine-3d` are one package. `ui` and `emoji-engine-ui` are one package.
 
@@ -26,6 +28,7 @@ interface CompileOptions {
   target?: 'module' | 'script';
   resolve?: (specifier: string) => string;
   prelude?: string;
+  types?: 'none' | 'lazy' | 'basic' | 'strict';
   strict?: boolean;
 }
 
@@ -44,6 +47,7 @@ interface CompileResult {
   exports: string[];
   imports: CompiledImport[];
   strict: boolean;
+  types: 'none' | 'lazy' | 'basic' | 'strict';
 }
 
 function compile(source: string, options?: CompileOptions): CompileResult;
@@ -65,7 +69,7 @@ interface BundleResult {
   files: string[];
 }
 
-function bundle(entry: string, options?: { target?: 'module' | 'script'; strict?: boolean }): BundleResult;
+function bundle(entry: string, options?: { target?: 'module' | 'script'; types?: 'none' | 'lazy' | 'basic' | 'strict'; strict?: boolean }): BundleResult;
 ```
 
 `modules` is the standard modules the graph imports, in the order canvas, terminal, 2d, 3d, ui, sound, hex, games. `files` is the Magic files, dependencies first.
@@ -76,7 +80,7 @@ function bundle(entry: string, options?: { target?: 'module' | 'script'; strict?
 
 ```ts
 class Runtime {
-  constructor(options?: { root?: string; outDir?: string; strict?: boolean });
+  constructor(options?: { root?: string; outDir?: string; types?: 'none' | 'lazy' | 'basic' | 'strict'; strict?: boolean });
   runFile(file: string): Promise<Record<string, unknown>>;
   run(source: string, filename?: string): Promise<Record<string, unknown>>;
 }

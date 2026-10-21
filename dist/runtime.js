@@ -17,9 +17,13 @@ import { preludeModuleSource } from './std.js';
 export class Runtime {
     root;
     outDir;
+    /** True when the fallback mode is strict. A file annotation can still choose another mode. */
     strict;
+    /** Fallback mode for a file that does not name one. */
+    types;
     constructor(options = {}) {
-        this.strict = options.strict === true;
+        this.types = options.types ?? (options.strict ? 'strict' : 'none');
+        this.strict = this.types === 'strict';
         this.root = path.resolve(options.root ?? process.cwd());
         if (options.outDir) {
             this.outDir = path.resolve(options.outDir);
@@ -74,6 +78,7 @@ export class Runtime {
                 filename: mod.absPath,
                 target: 'module',
                 prelude: './magic-std.js',
+                types: this.types,
                 strict: this.strict,
                 resolve: (specifier) => this.resolve(mod.absPath, specifier, names, dir, jsShims),
             });

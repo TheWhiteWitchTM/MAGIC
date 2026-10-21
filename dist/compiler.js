@@ -1,4 +1,4 @@
-import { checkProgram, fileIsStrict } from './check.js';
+import { checkProgram, fallbackTypeMode, fileTypeMode } from './check.js';
 import { MagicError } from './error.js';
 import { constantTruth, foldExpr } from './optimize.js';
 import { missingExport, moduleBySpecifier, moduleNs, isJsSpecifier, isMagicSpecifier, } from './modules.js';
@@ -24,7 +24,8 @@ export class Compiler {
     canAwait = true;
     temps = 0;
     readyClasses = new Set();
-    defaultStrict = false;
+    defaultMode = 'none';
+    mode = 'none';
     guards = [];
     compile(source, options = {}) {
         const filename = options.filename ?? '';
@@ -33,7 +34,7 @@ export class Compiler {
     }
     compileProgram(program, options = {}) {
         this.reset(program.filename || options.filename || '');
-        this.defaultStrict = options.strict === true;
+        this.defaultMode = fallbackTypeMode(options);
         const target = options.target ?? 'module';
         this.analyze(program);
         this.checkModuleExports(program);
@@ -49,7 +50,7 @@ export class Compiler {
     /** Statements for one file inside a bundle. The caller wraps them in a function. */
     emitBody(program, options) {
         this.reset(program.filename || options.filename || '');
-        this.defaultStrict = options.strict === true;
+        this.defaultMode = fallbackTypeMode(options);
         this.esm = false;
         this.bindings = options.bindings;
         this.analyze(program);
@@ -66,7 +67,7 @@ export class Compiler {
         this.header(program.filename);
         const imports = this.emitModuleImports(program, resolve, prelude);
         this.emitMain(program);
-        return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.isStrict(program) };
+        return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.mode === 'strict', types: this.mode };
     }
     compileScript(program) {
         this.esm = false;
@@ -83,7 +84,7 @@ export class Compiler {
         this.emitMain(program);
         this.w.pop();
         this.w.line('})();');
-        return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.isStrict(program) };
+        return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.mode === 'strict', types: this.mode };
     }
     header(filename) {
         const from = filename ? ` from ${filename}` : '';
@@ -1007,7 +1008,8 @@ export class Compiler {
         this.temps = 0;
         this.readyClasses.clear();
         this.programKey = {};
-        this.defaultStrict = false;
+        this.defaultMode = 'none';
+        this.mode = 'none';
         this.guards = [];
     }
     checkModuleExports(program) {
@@ -1022,10 +1024,8 @@ export class Compiler {
         }
     }
     runCheck(program) {
-        checkProgram(program, this.filename, this.isStrict(program));
-    }
-    isStrict(program) {
-        return fileIsStrict(program, this.defaultStrict);
+        this.mode = fileTypeMode(program, this.defaultMode);
+        checkProgram(program, this.filename, this.mode);
     }
     oops(node, message) {
         throw new MagicError(message, node.line, node.column, this.filename);

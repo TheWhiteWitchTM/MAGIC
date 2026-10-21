@@ -12,7 +12,7 @@ import type {
   Program,
   Stmt,
 } from './ast.js';
-import { checkProgram, fileIsStrict } from './check.js';
+import { checkProgram, fallbackTypeMode, fileTypeMode, type TypeMode } from './check.js';
 import { MagicError } from './error.js';
 import { constantTruth, foldExpr } from './optimize.js';
 import {
@@ -39,8 +39,14 @@ export interface CompileOptions {
   /** Prelude import path for `module`. Default `./magic-std.js`. */
   prelude?: string;
   /**
-   * Check this file as `@strict` unless the file writes `@normal`.
-   * Default is normal, matching a file with no annotation.
+   * Fallback when the file does not name a mode.
+   * `@none`, `@lazy`, `@basic`, and `@strict` on the file win. `@normal` is `@none`.
+   * When this is set, `strict` is ignored.
+   */
+  types?: TypeMode;
+  /**
+   * Check this file as `@strict` unless the file writes another mode.
+   * Default is none, matching a file with no annotation. Ignored when `types` is set.
    */
   strict?: boolean;
 }
@@ -61,6 +67,8 @@ export interface CompileResult {
   imports: CompiledImport[];
   /** True when this file was checked in strict mode. */
   strict: boolean;
+  /** The type mode this file was checked with. */
+  types: TypeMode;
 }
 
 export interface BodyBinding {
@@ -72,6 +80,8 @@ export interface BodyOptions {
   filename?: string;
   /** Import locals already available, as JavaScript expressions. */
   bindings: BodyBinding[];
+  /** Same meaning as `CompileOptions.types`. */
+  types?: TypeMode;
   /** Same meaning as `CompileOptions.strict`. */
   strict?: boolean;
 }
@@ -123,7 +133,8 @@ export class Compiler {
   private canAwait = true;
   private temps = 0;
   private readonly readyClasses = new Set<string>();
-  private defaultStrict = false;
+  private defaultMode: TypeMode = 'none';
+  private mode: TypeMode = 'none';
   private guards: string[] = [];
 
   compile(source: string, options: CompileOptions = {}): CompileResult {
@@ -134,7 +145,7 @@ export class Compiler {
 
   compileProgram(program: Program, options: CompileOptions = {}): CompileResult {
     this.reset(program.filename || options.filename || '');
-    this.defaultStrict = options.strict === true;
+    this.defaultMode = fallbackTypeMode(options);
     const target = options.target ?? 'module';
     this.analyze(program);
     this.checkModuleExports(program);
@@ -151,7 +162,7 @@ export class Compiler {
   /** Statements for one file inside a bundle. The caller wraps them in a function. */
   emitBody(program: Program, options: BodyOptions): BodyResult {
     this.reset(program.filename || options.filename || '');
-    this.defaultStrict = options.strict === true;
+    this.defaultMode = fallbackTypeMode(options);
     this.esm = false;
     this.bindings = options.bindings;
     this.analyze(program);
@@ -169,7 +180,7 @@ export class Compiler {
     this.header(program.filename);
     const imports = this.emitModuleImports(program, resolve, prelude);
     this.emitMain(program);
-    return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.isStrict(program) };
+    return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.mode === 'strict', types: this.mode };
   }
 
   private compileScript(program: Program): CompileResult {
@@ -185,7 +196,7 @@ export class Compiler {
     this.emitMain(program);
     this.w.pop();
     this.w.line('})();');
-    return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.isStrict(program) };
+    return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.mode === 'strict', types: this.mode };
   }
 
   private header(filename: string): void {
@@ -1100,7 +1111,8 @@ export class Compiler {
     this.temps = 0;
     this.readyClasses.clear();
     this.programKey = {};
-    this.defaultStrict = false;
+    this.defaultMode = 'none';
+    this.mode = 'none';
     this.guards = [];
   }
 
@@ -1115,11 +1127,8 @@ export class Compiler {
   }
 
   private runCheck(program: Program): void {
-    checkProgram(program, this.filename, this.isStrict(program));
-  }
-
-  private isStrict(program: Program): boolean {
-    return fileIsStrict(program, this.defaultStrict);
+    this.mode = fileTypeMode(program, this.defaultMode);
+    checkProgram(program, this.filename, this.mode);
   }
 
   private oops(node: Node, message: string): never {

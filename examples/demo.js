@@ -374,6 +374,86 @@ end
 print greet(1)
 `, 'cannot assign number to string');
 
+expectLines(runSnippet(`
+@none
+let hp as number = "no"
+print hp
+`), ['no'], 'none ignores a written type');
+
+expectLines(runSnippet(`
+@lazy
+let hp as number = 3
+hp = "ok"
+print hp
+`), ['ok'], 'lazy does not chase a type');
+
+mustThrow(`
+@lazy
+let hp as number = "no"
+`, 'cannot assign string to number');
+
+mustThrow(`
+@lazy
+fn greet(name as string) as string
+  return 1
+end
+`, 'cannot assign number to string');
+
+expectLines(runSnippet(`
+@lazy
+fn greet(name as string)
+  return name
+end
+print greet(1)
+`), ['1'], 'lazy does not check a call');
+
+compile('@lazy\npush(1, 2)\n', { filename: 'lazy-push.magic', target: 'script' });
+
+mustThrow(`
+@basic
+let hp as number = 3
+hp = "no"
+`, 'cannot assign string to number');
+
+mustThrow(`
+@basic
+fn greet(name as string)
+  return name
+end
+print greet(1)
+`, 'cannot assign number to string');
+
+mustThrow(`
+@basic
+class Box
+  private n = 0
+end
+`, 'belongs in a @strict class');
+
+expectLines(runSnippet(`
+@basic
+let n = 1
+n = "ok"
+print n
+`), ['ok'], 'basic leaves an untyped name free');
+
+expectLines(runSnippet(`
+@strict
+@lazy
+let hp as number = 3
+hp = "later"
+print hp
+`), ['later'], 'a later mode wins');
+
+const lazyResult = compile('@lazy\nprint 1\n', { filename: 'mode.magic', target: 'script' });
+if (lazyResult.types !== 'lazy' || lazyResult.strict) fail('compile did not report lazy');
+const strictResult = compile('print 1\n', { filename: 'mode.magic', target: 'script', strict: true });
+if (strictResult.types !== 'strict' || !strictResult.strict) fail('strict flag is not strict');
+const typedFlag = compile('@normal\nlet hp as number = "no"\n', { filename: 'mode.magic', target: 'script', types: 'strict' });
+if (typedFlag.types !== 'none') fail('a file annotation did not beat --types');
+mustThrow('let hp as number = "no"\n', 'cannot assign string to number', { types: 'basic' });
+mustThrow('let hp as number = "no"\n', 'cannot assign string to number', { strict: true });
+
 const strictLines = await capture(path.join(examples, 'strict.magic'));
 expectLines(strictLines, ['Hello, Ada', 'star', 'chest!', '3'], 'strict.magic');
 
@@ -600,7 +680,12 @@ function runSnippet(source) {
 function mustThrow(source, text, options = {}) {
   let threw = false;
   try {
-    compile(source, { filename: 'bad.magic', target: options.target ?? 'module' });
+    compile(source, {
+      filename: 'bad.magic',
+      target: options.target ?? 'module',
+      types: options.types,
+      strict: options.strict,
+    });
   } catch (error) {
     threw = true;
     if (!(error instanceof MagicError)) fail(`${text}: expected MagicError, got ${error}`);

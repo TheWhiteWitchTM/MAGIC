@@ -1,22 +1,51 @@
 import { MagicError } from './error.js';
+const MODE_BY_NAME = {
+    none: 'none',
+    off: 'none',
+    normal: 'none',
+    lazy: 'lazy',
+    basic: 'basic',
+    strict: 'strict',
+};
+/** `none`, `lazy`, `basic`, or `strict`. Anything else is null. */
+export function parseTypeMode(value) {
+    const name = value.trim().toLowerCase();
+    if (name === 'none' || name === 'lazy' || name === 'basic' || name === 'strict')
+        return name;
+    return null;
+}
+/** File annotation wins. `types` wins over `strict: true`. Otherwise strict means strict, and the default is none. */
+export function fallbackTypeMode(options) {
+    if (options?.types)
+        return options.types;
+    return options?.strict ? 'strict' : 'none';
+}
+/**
+ * The mode this file asked for.
+ * `@none`, `@normal`, and `@off` are none. `@lazy`, `@basic`, and `@strict` name themselves.
+ * A later one wins. `fallback` is the compiler option when the file says nothing.
+ */
+export function fileTypeMode(program, fallback = 'none') {
+    let mode = fallback;
+    for (const ann of fileAnnotations(program)) {
+        const next = MODE_BY_NAME[ann.name];
+        if (next)
+            mode = next;
+    }
+    return mode;
+}
 /**
  * True when this file opted into strict mode.
  * `@strict` turns it on. `@normal` turns it off. A later one wins.
  * `fallback` is the compiler option when the file says nothing.
  */
 export function fileIsStrict(program, fallback = false) {
-    let strict = fallback;
-    for (const ann of fileAnnotations(program)) {
-        if (ann.name === 'strict')
-            strict = true;
-        if (ann.name === 'normal')
-            strict = false;
-    }
-    return strict;
+    return fileTypeMode(program, fallback ? 'strict' : 'none') === 'strict';
 }
-/** Walk a parsed program and report the traps strict mode is here to catch. */
-export function checkProgram(program, filename, strict) {
-    new Checker(filename, strict).check(program);
+/** Walk a parsed program. `true` is strict. `false` is none. A mode name is that mode. */
+export function checkProgram(program, filename, strictOrMode = false) {
+    const mode = typeof strictOrMode === 'string' ? strictOrMode : strictOrMode ? 'strict' : 'none';
+    new Checker(filename, mode).check(program);
 }
 const ANY = { tag: 'any' };
 const NIL = { tag: 'nil' };
@@ -40,15 +69,22 @@ const PRIMITIVE = {
 };
 class Checker {
     filename;
-    strict;
+    mode;
     classes = new Map();
     stack = [];
     builtins = new Map();
     className = null;
     returnType = null;
-    constructor(filename, strict) {
+    constructor(filename, mode) {
         this.filename = filename;
-        this.strict = strict;
+        this.mode = mode;
+    }
+    /** basic and strict follow a written type to the places it is used. lazy stays on the line that wrote it. */
+    get checksUses() {
+        return this.mode === 'basic' || this.mode === 'strict';
+    }
+    get checksAccess() {
+        return this.mode === 'strict';
     }
     check(program) {
         const top = new Map();
@@ -56,10 +92,10 @@ class Checker {
         this.stack.push(top);
         this.collectClasses(program.body);
         this.declareSurface(program.body, top);
-        if (!this.strict) {
+        if (this.mode !== 'strict')
             this.rejectAccess(program.body);
+        if (this.mode === 'none')
             return;
-        }
         this.walkBody(program.body);
     }
     collectClasses(body) {
@@ -247,6 +283,11 @@ class Checker {
     }
     walkAssign(stmt) {
         const value = this.infer(stmt.value);
+        if (!this.checksUses) {
+            if (stmt.target.kind !== 'name')
+                this.infer(stmt.target);
+            return;
+        }
         if (stmt.target.kind === 'name') {
             const bind = this.lookupBind(stmt.target.name);
             if (bind) {
@@ -344,15 +385,29 @@ class Checker {
         if (expr.callee.kind === 'name') {
             const info = this.classes.get(expr.callee.name);
             if (info) {
-                this.checkArgs(expr, expr.args, info.ctor.params ?? []);
+                if (this.checksUses)
+                    this.checkArgs(expr, expr.args, info.ctor.params ?? []);
+                else
+                    for (const arg of expr.args)
+                        this.infer(arg);
                 this.checkCtorAccess(info, expr);
                 return { tag: 'class', className: info.name };
             }
             if (this.lookupBind(expr.callee.name)?.declared === this.builtins.get(expr.callee.name)) {
+                if (!this.checksUses) {
+                    for (const arg of expr.args)
+                        this.infer(arg);
+                    return this.builtins.get(expr.callee.name)?.returns ?? ANY;
+                }
                 return this.builtinCall(expr.callee.name, expr.args, expr);
             }
         }
         const callee = this.infer(expr.callee);
+        if (!this.checksUses) {
+            for (const arg of expr.args)
+                this.infer(arg);
+            return callee.returns ?? ANY;
+        }
         this.checkCallable(expr, callee);
         this.checkArgs(expr, expr.args, callee.params ?? []);
         return callee.returns ?? ANY;
@@ -361,7 +416,11 @@ class Checker {
         if (callee.kind === 'name') {
             const info = this.classes.get(callee.name);
             if (info) {
-                this.checkArgs(node, args, info.ctor.params ?? []);
+                if (this.checksUses)
+                    this.checkArgs(node, args, info.ctor.params ?? []);
+                else
+                    for (const arg of args)
+                        this.infer(arg);
                 this.checkCtorAccess(info, node);
                 return { tag: 'class', className: info.name };
             }
@@ -448,6 +507,8 @@ class Checker {
         return null;
     }
     assertAccess(owner, name, member, node, _writing) {
+        if (!this.checksAccess)
+            return;
         if (member.access === 'public')
             return;
         if (member.access === 'private') {

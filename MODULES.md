@@ -1,5 +1,7 @@
 # Modules
 
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](LICENSE)
+
 A module annotation loads one of these for the whole file. `use "canvas"` is the same load. `use "./words"` loads a file you wrote. `import` loads the same module and lets you pick the names. The export lists here match [lang/magic.language.json](lang/magic.language.json) and the compiler.
 
 A `.magic` file is a module. Top-level `fn`, `class`, and `let` are the exports. No export line is required.

@@ -50,8 +50,12 @@
   "builtins": ["print", "len", "str", "num", "int", "type", "keys", "values", "push", "pop", "time", "error", "sleep", "load"],
   "operators": ["==", "!=", "<>", "<=", ">=", "+=", "-=", "*=", "/=", "..", "+", "-", "*", "/", "%", "^", "#", "<", ">", "=", "&"],
   "annotations": {
-    "strict": "Turn on access and type checks for the file.",
-    "normal": "Turn those checks off.",
+    "none": "Do not check types. Same as normal.",
+    "normal": "Do not check types. Same as none.",
+    "off": "Do not check types. Same as none.",
+    "lazy": "Check a written type on the line that wrote it.",
+    "basic": "Check a written type when the name is used. Untyped names stay free.",
+    "strict": "Check written types when they are used, and check public, private, and protected.",
     "public": "A class member is public. Same as the word public.",
     "private": "A class member is private. Same as the word private.",
     "protected": "A class member is protected. Same as the word protected."

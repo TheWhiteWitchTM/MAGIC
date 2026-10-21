@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { TypeMode } from './check.js';
 import { Compiler } from './compiler.js';
 import { MagicError } from './error.js';
 import { commonDir, expandUses, loadGraph, moduleFile, resolveMagicFile } from './graph.js';
@@ -15,7 +16,13 @@ export interface RuntimeOptions {
   root?: string;
   /** Where generated modules are written. Default is a fresh folder under the system temp directory. */
   outDir?: string;
-  /** Check every file as `@strict` unless that file writes `@normal`. */
+  /**
+   * Fallback type mode when a file does not name one.
+   * `@none`, `@lazy`, `@basic`, and `@strict` on the file win. `@normal` is `@none`.
+   * When this is set, `strict` is ignored.
+   */
+  types?: TypeMode;
+  /** Check every file as `@strict` unless that file writes another mode. Ignored when `types` is set. */
   strict?: boolean;
 }
 
@@ -30,10 +37,14 @@ export type MagicModule = Record<string, unknown>;
 export class Runtime {
   readonly root: string;
   readonly outDir: string;
+  /** True when the fallback mode is strict. A file annotation can still choose another mode. */
   readonly strict: boolean;
+  /** Fallback mode for a file that does not name one. */
+  readonly types: TypeMode;
 
   constructor(options: RuntimeOptions = {}) {
-    this.strict = options.strict === true;
+    this.types = options.types ?? (options.strict ? 'strict' : 'none');
+    this.strict = this.types === 'strict';
     this.root = path.resolve(options.root ?? process.cwd());
     if (options.outDir) {
       this.outDir = path.resolve(options.outDir);
@@ -89,6 +100,7 @@ export class Runtime {
         filename: mod.absPath,
         target: 'module',
         prelude: './magic-std.js',
+        types: this.types,
         strict: this.strict,
         resolve: (specifier) => this.resolve(mod.absPath, specifier, names, dir, jsShims),
       });

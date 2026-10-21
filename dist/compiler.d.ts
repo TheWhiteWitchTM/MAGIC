@@ -1,4 +1,5 @@
 import type { ImportStmt, Program } from './ast.js';
+import { type TypeMode } from './check.js';
 import { type ModuleName } from './modules.js';
 export interface CompileOptions {
     /** Shown in errors and in the comment at the top of the JavaScript. */
@@ -13,8 +14,14 @@ export interface CompileOptions {
     /** Prelude import path for `module`. Default `./magic-std.js`. */
     prelude?: string;
     /**
-     * Check this file as `@strict` unless the file writes `@normal`.
-     * Default is normal, matching a file with no annotation.
+     * Fallback when the file does not name a mode.
+     * `@none`, `@lazy`, `@basic`, and `@strict` on the file win. `@normal` is `@none`.
+     * When this is set, `strict` is ignored.
+     */
+    types?: TypeMode;
+    /**
+     * Check this file as `@strict` unless the file writes another mode.
+     * Default is none, matching a file with no annotation. Ignored when `types` is set.
      */
     strict?: boolean;
 }
@@ -36,6 +43,8 @@ export interface CompileResult {
     imports: CompiledImport[];
     /** True when this file was checked in strict mode. */
     strict: boolean;
+    /** The type mode this file was checked with. */
+    types: TypeMode;
 }
 export interface BodyBinding {
     local: string;
@@ -45,6 +54,8 @@ export interface BodyOptions {
     filename?: string;
     /** Import locals already available, as JavaScript expressions. */
     bindings: BodyBinding[];
+    /** Same meaning as `CompileOptions.types`. */
+    types?: TypeMode;
     /** Same meaning as `CompileOptions.strict`. */
     strict?: boolean;
 }
@@ -72,7 +83,8 @@ export declare class Compiler {
     private canAwait;
     private temps;
     private readonly readyClasses;
-    private defaultStrict;
+    private defaultMode;
+    private mode;
     private guards;
     compile(source: string, options?: CompileOptions): CompileResult;
     compileProgram(program: Program, options?: CompileOptions): CompileResult;
@@ -140,7 +152,6 @@ export declare class Compiler {
     private reset;
     private checkModuleExports;
     private runCheck;
-    private isStrict;
     private oops;
 }
 /** Compile one Magic script. */

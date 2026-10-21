@@ -1,5 +1,7 @@
 # MAGIC
 
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](LICENSE)
+
 MAGIC mixes Lua and BASIC, and it compiles to JavaScript. A script can load a canvas, a terminal, 3D, a UI kit, sound, hex grids, and a few game helpers. `magic run` runs it. `magic app` writes an Electron project. `magic pack` writes that same project, and `magic pack --build` also builds the standalone app.
 
 `@canvas` loads a module. `import` does the same job when you want to name what you take.
@@ -53,7 +55,7 @@ npm run magic -- pack examples/scene.magic -o build/drift --title "Drift"
 
 `node dist/cli.js` is the same program. A project that depends on this package gets a `magic` command.
 
-`magic compile` writes one JavaScript module. Magic files that the script imports are copied into that module. A standard module stays a package import: `magic/canvas`, `magic/terminal`, `emoji-engine-3d`, `emoji-engine-ui`, `magic/sound`, `magic/hex`, or `magic/games`. `magic run --strict` and `magic compile --strict` check the file the way `@strict` does.
+`magic compile` writes one JavaScript module. Magic files that the script imports are copied into that module. A standard module stays a package import: `magic/canvas`, `magic/terminal`, `emoji-engine-3d`, `emoji-engine-ui`, `magic/sound`, `magic/hex`, or `magic/games`. `magic run --types lazy` checks a written type where it is written. `--types basic` checks it again when the name is used. `--types strict` and `--strict` also check `private`. `@none` looks away. A file annotation wins, and an untyped name stays free.
 
 `magic app` and `magic pack` write a folder. The window is 960 by 720 unless `--width` and `--height` say otherwise. The folder's `package.json` depends on Electron and electron-builder. MAGIC does not install them unless you pass `--build` to `magic pack`.
 

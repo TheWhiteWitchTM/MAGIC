@@ -1,7 +1,12 @@
 {
   "name": "magic",
   "version": "0.1.0",
-  "description": "MAGIC, a language that mixes Lua and BASIC and compiles to JavaScript.",
+  "description": "Alpha. MAGIC mixes Lua and BASIC and compiles to JavaScript.",
+  "author": {
+    "name": "Mira (The White Witch™)",
+    "email": "thewhitewitchtm@google.com",
+    "url": "https://x.com/TheWhiteWitchTM"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

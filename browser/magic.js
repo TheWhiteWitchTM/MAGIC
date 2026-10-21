@@ -48,18 +48,31 @@ var Magic = (() => {
   };
 
   // dist/check.js
-  function fileIsStrict(program, fallback = false) {
-    let strict = fallback;
-    for (const ann of fileAnnotations(program)) {
-      if (ann.name === "strict")
-        strict = true;
-      if (ann.name === "normal")
-        strict = false;
-    }
-    return strict;
+  var MODE_BY_NAME = {
+    none: "none",
+    off: "none",
+    normal: "none",
+    lazy: "lazy",
+    basic: "basic",
+    strict: "strict"
+  };
+  function fallbackTypeMode(options) {
+    if (options?.types)
+      return options.types;
+    return options?.strict ? "strict" : "none";
   }
-  function checkProgram(program, filename, strict) {
-    new Checker(filename, strict).check(program);
+  function fileTypeMode(program, fallback = "none") {
+    let mode = fallback;
+    for (const ann of fileAnnotations(program)) {
+      const next = MODE_BY_NAME[ann.name];
+      if (next)
+        mode = next;
+    }
+    return mode;
+  }
+  function checkProgram(program, filename, strictOrMode = false) {
+    const mode = typeof strictOrMode === "string" ? strictOrMode : strictOrMode ? "strict" : "none";
+    new Checker(filename, mode).check(program);
   }
   var ANY = { tag: "any" };
   var NIL = { tag: "nil" };
@@ -83,15 +96,22 @@ var Magic = (() => {
   };
   var Checker = class {
     filename;
-    strict;
+    mode;
     classes = /* @__PURE__ */ new Map();
     stack = [];
     builtins = /* @__PURE__ */ new Map();
     className = null;
     returnType = null;
-    constructor(filename, strict) {
+    constructor(filename, mode) {
       this.filename = filename;
-      this.strict = strict;
+      this.mode = mode;
+    }
+    /** basic and strict follow a written type to the places it is used. lazy stays on the line that wrote it. */
+    get checksUses() {
+      return this.mode === "basic" || this.mode === "strict";
+    }
+    get checksAccess() {
+      return this.mode === "strict";
     }
     check(program) {
       const top = /* @__PURE__ */ new Map();
@@ -99,10 +119,10 @@ var Magic = (() => {
       this.stack.push(top);
       this.collectClasses(program.body);
       this.declareSurface(program.body, top);
-      if (!this.strict) {
+      if (this.mode !== "strict")
         this.rejectAccess(program.body);
+      if (this.mode === "none")
         return;
-      }
       this.walkBody(program.body);
     }
     collectClasses(body) {
@@ -289,6 +309,11 @@ var Magic = (() => {
     }
     walkAssign(stmt) {
       const value = this.infer(stmt.value);
+      if (!this.checksUses) {
+        if (stmt.target.kind !== "name")
+          this.infer(stmt.target);
+        return;
+      }
       if (stmt.target.kind === "name") {
         const bind = this.lookupBind(stmt.target.name);
         if (bind) {
@@ -386,15 +411,29 @@ var Magic = (() => {
       if (expr.callee.kind === "name") {
         const info = this.classes.get(expr.callee.name);
         if (info) {
-          this.checkArgs(expr, expr.args, info.ctor.params ?? []);
+          if (this.checksUses)
+            this.checkArgs(expr, expr.args, info.ctor.params ?? []);
+          else
+            for (const arg of expr.args)
+              this.infer(arg);
           this.checkCtorAccess(info, expr);
           return { tag: "class", className: info.name };
         }
         if (this.lookupBind(expr.callee.name)?.declared === this.builtins.get(expr.callee.name)) {
+          if (!this.checksUses) {
+            for (const arg of expr.args)
+              this.infer(arg);
+            return this.builtins.get(expr.callee.name)?.returns ?? ANY;
+          }
           return this.builtinCall(expr.callee.name, expr.args, expr);
         }
       }
       const callee = this.infer(expr.callee);
+      if (!this.checksUses) {
+        for (const arg of expr.args)
+          this.infer(arg);
+        return callee.returns ?? ANY;
+      }
       this.checkCallable(expr, callee);
       this.checkArgs(expr, expr.args, callee.params ?? []);
       return callee.returns ?? ANY;
@@ -403,7 +442,11 @@ var Magic = (() => {
       if (callee.kind === "name") {
         const info = this.classes.get(callee.name);
         if (info) {
-          this.checkArgs(node, args, info.ctor.params ?? []);
+          if (this.checksUses)
+            this.checkArgs(node, args, info.ctor.params ?? []);
+          else
+            for (const arg of args)
+              this.infer(arg);
           this.checkCtorAccess(info, node);
           return { tag: "class", className: info.name };
         }
@@ -490,6 +533,8 @@ var Magic = (() => {
       return null;
     }
     assertAccess(owner, name, member, node, _writing) {
+      if (!this.checksAccess)
+        return;
       if (member.access === "public")
         return;
       if (member.access === "private") {
@@ -3034,7 +3079,8 @@ function __magic_load(url, as) {
     canAwait = true;
     temps = 0;
     readyClasses = /* @__PURE__ */ new Set();
-    defaultStrict = false;
+    defaultMode = "none";
+    mode = "none";
     guards = [];
     compile(source, options = {}) {
       const filename = options.filename ?? "";
@@ -3043,7 +3089,7 @@ function __magic_load(url, as) {
     }
     compileProgram(program, options = {}) {
       this.reset(program.filename || options.filename || "");
-      this.defaultStrict = options.strict === true;
+      this.defaultMode = fallbackTypeMode(options);
       const target = options.target ?? "module";
       this.analyze(program);
       this.checkModuleExports(program);
@@ -3059,7 +3105,7 @@ function __magic_load(url, as) {
     /** Statements for one file inside a bundle. The caller wraps them in a function. */
     emitBody(program, options) {
       this.reset(program.filename || options.filename || "");
-      this.defaultStrict = options.strict === true;
+      this.defaultMode = fallbackTypeMode(options);
       this.esm = false;
       this.bindings = options.bindings;
       this.analyze(program);
@@ -3076,7 +3122,7 @@ function __magic_load(url, as) {
       this.header(program.filename);
       const imports = this.emitModuleImports(program, resolve, prelude);
       this.emitMain(program);
-      return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.isStrict(program) };
+      return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.mode === "strict", types: this.mode };
     }
     compileScript(program) {
       this.esm = false;
@@ -3093,7 +3139,7 @@ function __magic_load(url, as) {
       this.emitMain(program);
       this.w.pop();
       this.w.line("})();");
-      return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.isStrict(program) };
+      return { code: this.w.text(), exports: this.exportNames(), imports, strict: this.mode === "strict", types: this.mode };
     }
     header(filename) {
       const from = filename ? ` from ${filename}` : "";
@@ -4007,7 +4053,8 @@ function __magic_load(url, as) {
       this.temps = 0;
       this.readyClasses.clear();
       this.programKey = {};
-      this.defaultStrict = false;
+      this.defaultMode = "none";
+      this.mode = "none";
       this.guards = [];
     }
     checkModuleExports(program) {
@@ -4022,10 +4069,8 @@ function __magic_load(url, as) {
       }
     }
     runCheck(program) {
-      checkProgram(program, this.filename, this.isStrict(program));
-    }
-    isStrict(program) {
-      return fileIsStrict(program, this.defaultStrict);
+      this.mode = fileTypeMode(program, this.defaultMode);
+      checkProgram(program, this.filename, this.mode);
     }
     oops(node, message) {
       throw new MagicError(message, node.line, node.column, this.filename);

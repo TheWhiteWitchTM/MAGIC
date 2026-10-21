@@ -1,5 +1,7 @@
 # MAGIC
 
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](LICENSE)
+
 MAGIC is a language. A program is a UTF-8 `.magic` file. The shape is BASIC and Lua. The compiler turns it into JavaScript, so a script can call the picture modules, the terminal, 3D, UI, sound, hex grids, and the games helpers, and it can call the browser.
 
 This file is the language. [README.md](README.md) covers install, `magic run`, and `magic app`. [LEARN.md](LEARN.md) is the short course. [MODULES.md](MODULES.md) is each module. [INTERFACES.md](INTERFACES.md) covers the compiler, the runtime, and the packager. [lang/magic.language.json](lang/magic.language.json) is the same language in a form a highlighter or another compiler can read.
@@ -742,11 +744,22 @@ let screen = new term.Terminal({ cols: 40, rows: 8, canvas: engine.canvas })
 
 The full export lists are in [MODULES.md](MODULES.md) and in [lang/magic.language.json](lang/magic.language.json).
 
-## Strict mode
+## Type settings
 
-The default is normal. Normal Magic is the rest of this file. `@strict` asks the compiler for two extra checks, and nothing else: access on class members, and the types you wrote. It does not require types. It does not require `public`. A script with no `as` and no `private` compiles in strict mode the same way it does in normal mode, plus a few obvious traps such as `push(1, 2)`.
+The default is none. None is the rest of this file with the checker looking away. Four settings, and a file picks one. A later annotation wins. `@normal` and `@off` are other names for `@none`.
 
-`compile(source, { strict: true })`, `magic run --strict`, and `msx --strict` turn strict on for a file that does not say `@normal`.
+| Setting | What it checks |
+| --- | --- |
+| `@none` | Nothing about types. `public`, `private`, and `protected` are still refused. |
+| `@lazy` | A written type, on the line that wrote it. A `let`, a field, and a function's `as` return. Later uses are free. |
+| `@basic` | The types you wrote, including later assignment and calls. Untyped names stay free. |
+| `@strict` | What `@basic` checks, plus `public`, `private`, and `protected`. |
+
+None of them require a type. None of them require `public`. `nil` still fits any type. Extra arguments are still ignored. Missing arguments are still empty. An untyped name can hold a number and then a string. The point is to stop where TypeScript would keep going.
+
+`@strict` does not require types. A script with no `as` and no `private` compiles in strict mode the same way it does in none, plus a few obvious traps such as `push(1, 2)`. `@lazy` does not catch that trap. `@basic` and `@strict` do.
+
+`compile(source, { types: "lazy" })`, `magic run --types basic`, and `msx --types strict` set the fallback for a file that does not name a mode. `compile(source, { strict: true })`, `magic run --strict`, and `msx --strict` are the same as `strict`. The file wins. `@normal` turns a `--strict` run back to none.
 
 ## Types
 
@@ -777,17 +790,17 @@ These names are built in.
 
 Any other name is treated as a class type, including an imported `Engine`. The checker does not load other files to see their members.
 
-In `@strict`, a written type is checked. Untyped names stay `any`. `nil` still fits any type. Extra arguments are still ignored. Missing arguments are still empty. The checker reports a mismatch it can see, and otherwise stays quiet.
+In `@lazy`, `@basic`, and `@strict`, a written type is checked against the value on that line. Untyped names stay `any`. `nil` still fits any type. Extra arguments are still ignored. Missing arguments are still empty. The checker reports a mismatch it can see, and otherwise stays quiet.
 
 ```
-@strict
+@basic
 let hp as number = 3
 hp = "no"
 ```
 
-That assignment is `cannot assign string to number`. `let hp = 3` then `hp = "no"` is fine, because `hp` was never typed.
+That assignment is `cannot assign string to number`. The same program under `@lazy` prints `no`, because lazy checked `let hp as number = 3` and then stopped. `let hp = 3` then `hp = "no"` is fine in every mode, because `hp` was never typed.
 
-`greet(1)` is an error when `greet` took `name as string`. `1()` is `cannot call a number` when that `1` is a number the checker already knows. `push(1, 2)` is `push expects a list`.
+Under `@basic` and `@strict`, `greet(1)` is an error when `greet` took `name as string`. `@lazy` allows the call. `1()` is `cannot call a number` when that `1` is a number the checker already knows, in `@basic` and `@strict`. `push(1, 2)` is `push expects a list` in those same two modes.
 
 A class value fits a parent type: `let box as Box = Counter(2)` is fine when `Counter is Box`. The other way is an error.
 

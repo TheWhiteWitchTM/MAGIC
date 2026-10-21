@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import type { ImportStmt } from './ast.js';
+import type { TypeMode } from './check.js';
 import { Compiler, type BodyBinding } from './compiler.js';
 import {
   MODULES,
@@ -22,7 +23,12 @@ export interface BundleOptions {
    * `script` is one classic script that reads the module globals.
    */
   target?: 'module' | 'script';
-  /** Check every file as `@strict` unless that file writes `@normal`. */
+  /**
+   * Fallback type mode when a file does not name one.
+   * When this is set, `strict` is ignored.
+   */
+  types?: TypeMode;
+  /** Check every file as `@strict` unless that file writes another mode. Ignored when `types` is set. */
   strict?: boolean;
 }
 
@@ -167,7 +173,12 @@ export function bundle(entry: string, options: BundleOptions = {}): BundleResult
   for (const mod of loaded) {
     const id = ids.get(mod.absPath)!;
     const bindings = bindingsFor(mod, ids, external);
-    const body = compiler.emitBody(mod.program, { filename: mod.absPath, bindings, strict: options.strict });
+    const body = compiler.emitBody(mod.program, {
+      filename: mod.absPath,
+      bindings,
+      types: options.types,
+      strict: options.strict,
+    });
     if (mod.absPath === entryPath) entryExports = body.exports;
     const asyncMod = compiler.hasTopLevelAwait(mod.program);
     if (asyncMod) needsAsync = true;

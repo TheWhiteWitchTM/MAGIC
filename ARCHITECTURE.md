@@ -1,5 +1,7 @@
 # Architecture
 
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](LICENSE)
+
 MAGIC is the language. The picture, the terminal, 3D, and the UI kit are libraries it loads. Sound, hex, and games ship in this package.
 
 The compiler is five pieces. Each one owns a single job. Application code is the only thing that may compose them.
@@ -21,7 +23,7 @@ application
 
 The words `print` and `len` live in `src/std.ts` as plain JavaScript text. The standard modules live in `src/modules/`. The registry in `src/modules.ts` is the list `@name` and `import "name"` both use. Nothing imports a module sideways except the compiler, the runtime, the bundler, and the packager.
 
-Lexer, Parser, and Compiler do not import Runtime or App. The browser entry, `src/browser.ts`, exports the compiler and stops there, so a page can compile a script without a file system. The checker in `src/check.ts` is part of the compiler. It runs when a file is `@strict`.
+Lexer, Parser, and Compiler do not import Runtime or App. The browser entry, `src/browser.ts`, exports the compiler and stops there, so a page can compile a script without a file system. The checker in `src/check.ts` is part of the compiler. `@none` skips the type walk. `@lazy` checks a written type where it is written. `@basic` checks it again at each use. `@strict` adds access on class members.
 
 `src/lower.ts` runs at the end of the parse. A module annotation becomes an import statement. `use "canvas"` takes that same path. `use "./words"` is expanded once the file graph is known. After that, the compiler has one way to load a module. `src/optimize.ts` folds constants while the compiler emits JavaScript.
 
@@ -46,7 +48,7 @@ The lexer is the one described in the language: a newline is a token, keywords i
 
 ## Compiler
 
-The compiler walks the tree twice for locals, then once more for `@strict`. Every top-level `fn`, `class`, and `let` is exported. Imports are not exported again. An unknown name becomes `globalThis.name`.
+The compiler walks the tree twice for locals, then once more when the file is `@lazy`, `@basic`, or `@strict`. Every top-level `fn`, `class`, and `let` is exported. Imports are not exported again. An unknown name becomes `globalThis.name`.
 
 A module import in an ES module uses the specifier from the registry (`magic/canvas`, `emoji-engine-3d`, and the rest). A classic script binds the same names from the browser global and throws `canvas is not loaded` when that global is missing.
 
@@ -69,7 +71,7 @@ src/modules/sound.ts    tones and notes
 src/modules/hex.ts      hex grids
 src/modules/games.ts    loops, keys, scenes, scores
 src/compiler.ts         one file of JavaScript
-src/check.ts            @strict
+src/check.ts            none, lazy, basic, strict
 src/std.ts              prelude text
 src/runtime.ts          run a graph on Node
 src/bundle.ts           one file for a whole graph

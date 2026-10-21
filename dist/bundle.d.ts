@@ -1,3 +1,4 @@
+import type { TypeMode } from './check.js';
 import { type ModuleName } from './modules.js';
 import { commonDir, moduleFile } from './graph.js';
 export interface BundleOptions {
@@ -6,7 +7,12 @@ export interface BundleOptions {
      * `script` is one classic script that reads the module globals.
      */
     target?: 'module' | 'script';
-    /** Check every file as `@strict` unless that file writes `@normal`. */
+    /**
+     * Fallback type mode when a file does not name one.
+     * When this is set, `strict` is ignored.
+     */
+    types?: TypeMode;
+    /** Check every file as `@strict` unless that file writes another mode. Ignored when `types` is set. */
     strict?: boolean;
 }
 export interface BundleResult {

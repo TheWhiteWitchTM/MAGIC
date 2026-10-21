@@ -1,5 +1,7 @@
 # Language definitions
 
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](../LICENSE)
+
 These files describe MAGIC for tools. [LANGUAGE.md](../LANGUAGE.md) is the meaning. If a file here and LANGUAGE.md disagree, LANGUAGE.md wins, and the file here should be fixed.
 
 | File | Use |

@@ -1,6 +1,8 @@
 # Changes
 
-MAGIC 0.1.0 is the first release of the language as its own package.
+Alpha. This is early work, and it can still change. Mira, [The White Witch™](https://thewhitewitchtm.github.io/whitewitch/). [X](https://x.com/TheWhiteWitchTM) · [thewhitewitchtm@google.com](mailto:thewhitewitchtm@google.com) · [GitHub](https://github.com/TheWhiteWitchTM) · [YouTube](https://youtube.com/@TheWhiteWitchTM) · [Bluesky](https://bsky.app/profile/thewhitewitchtm.sociallydead.me) · [MIT License](LICENSE)
+
+MAGIC 0.1.0 is the alpha of the language as its own package.
 
 - `@canvas`, `@terminal`, `@2d`, `@3d`, `@ui`, `@sound`, `@hex`, and `@games` load modules. `@name as local` binds the module under one name.
 - `import` of those same names loads the same modules. `canvas` and `terminal` are the two halves of emoji-engine-2d. `2d` still means both.
@@ -12,3 +14,4 @@ MAGIC 0.1.0 is the first release of the language as its own package.
 - `"""` is a multiline string. `$"Hello, {name}!"`, `$'...'`, and `$"""..."""` are templates. `{{` writes a `{`.
 - `use "canvas"` matches `@canvas`. `use "./words"` loads the exports of a Magic file you wrote. `use "./helpers.js" as helpers` loads JavaScript under one name.
 - The compiler folds constant arithmetic, comparisons, and string joins, and it drops an `if` or `while` whose test is a constant `false`.
+- Type settings are `@none`, `@lazy`, `@basic`, and `@strict`. `@normal` is `@none`. None looks away. Lazy checks a written type on the line that wrote it. Basic checks that type when the name is used. Strict does what basic does, and it checks `public`, `private`, and `protected`. Untyped names stay free in every mode. `magic run --types lazy` sets the fallback. `--strict` is still `--types strict`. A file annotation wins.

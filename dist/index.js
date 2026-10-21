@@ -1,6 +1,6 @@
 export { App } from './app.js';
 export { bundle } from './bundle.js';
-export { checkProgram, fileIsStrict } from './check.js';
+export { checkProgram, fallbackTypeMode, fileIsStrict, fileTypeMode, parseTypeMode } from './check.js';
 export { Compiler, compile, defaultResolve } from './compiler.js';
 export { MagicError } from './error.js';
 export { KEYWORDS } from './lexer.js';
